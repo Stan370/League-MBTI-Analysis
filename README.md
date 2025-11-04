@@ -78,6 +78,9 @@ You can also deploy manually using Wrangler:
 ```bash
 npm run build
 npx wrangler pages deploy dist --project-name=league-mbti-analysis
+
+# Or if you have wrangler.jsonc configured:
+npx wrangler pages deploy
 ```
 
 ## Technology Stack
