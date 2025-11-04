@@ -4,22 +4,27 @@ import type { AnalysisResult, ChampionData } from '../types';
 import type { MatchDto } from '../types/riotApiTypes';
 import { BrainCircuitIcon, CrosshairIcon, ShieldCheckIcon, SwordsIcon } from '../components/icons';
 
-const API_KEY = process.env.API_KEY;
-// Note: A real app would use a server-side proxy to hide the API key.
-// For this hackathon, we assume the key is available in the environment.
-const API_BASE_ACCOUNT = 'https://asia.api.riotgames.com';
-const API_BASE_MATCH = 'https://asia.api.riotgames.com';
+// API requests are proxied through the Cloudflare Worker to keep the API key server-side
+const API_BASE_ACCOUNT = '/api/riot';
+const API_BASE_MATCH = '/api/riot';
 const DDRAGON_VERSION = '14.15.1';
 
 // --- HELPER: API FETCHING ---
 async function apiFetch<T>(url: string): Promise<T> {
-    if (!API_KEY) {
-        throw new Error("Riot API key is missing. Please check your environment configuration. If you don't have one, use the 'Mock Data' option.");
+    // Convert Riot API URL to proxy URL if it's a full URL, otherwise use as-is (already a proxy path)
+    let proxyUrl = url;
+    if (url.startsWith('https://asia.api.riotgames.com')) {
+        proxyUrl = url.replace('https://asia.api.riotgames.com', '/api/riot');
     }
-    const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}api_key=${API_KEY}`);
+    
+    const response = await fetch(proxyUrl);
     if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
         if (response.status === 403) throw new Error("Forbidden: Check your Riot API key.");
         if (response.status === 404) throw new Error("Player or match data not found. Please check Summoner Name and Tag.");
+        if (response.status === 500 && errorData.error) {
+            throw new Error(errorData.error);
+        }
         throw new Error(`Riot API request failed: ${response.status} ${response.statusText}`);
     }
     return response.json() as Promise<T>;
