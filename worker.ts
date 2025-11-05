@@ -1,83 +1,90 @@
+function tagToPlatformHost(tag: string): string {
+  const upper = tag.toUpperCase();
+  const map: Record<string, string> = {
+    NA1: 'na1', BR1: 'br1', LA1: 'la1', LA2: 'la2', OC1: 'oc1',
+    EUW1: 'euw1', EUN1: 'eun1', TR1: 'tr1', RU: 'ru',
+    KR: 'kr', JP1: 'jp1',
+    PH2: 'ph2', SG2: 'sg2', TH2: 'th2', TW2: 'tw2', VN2: 'vn2',
+  };
+  return map[upper] || 'na1';
+}
+
+function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' {
+  const upper = tag.toUpperCase();
+  if (['NA1', 'BR1', 'LA1', 'LA2', 'OC1'].includes(upper)) return 'americas';
+  if (['EUN1', 'EUW1', 'TR1', 'RU'].includes(upper)) return 'europe';
+  if (['JP1', 'KR'].includes(upper)) return 'asia';
+  if (['PH2', 'SG2', 'TH2', 'TW2', 'VN2'].includes(upper)) return 'sea';
+  return 'americas';
+}
+
 export default {
   async fetch(request: Request, env: { RIOT_API_KEY?: string }): Promise<Response> {
     const url = new URL(request.url);
-    
-    // Handle Riot API proxy requests
-    if (url.pathname.startsWith('/api/riot/')) {
-      // Handle CORS preflight requests
+
+    if (url.pathname.startsWith('/api/riot')) {
       if (request.method === 'OPTIONS') {
         return new Response(null, {
           status: 204,
           headers: {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type',
             'Access-Control-Max-Age': '86400',
           },
         });
       }
-      
+
       const apiKey = env.RIOT_API_KEY;
       if (!apiKey) {
-        return new Response(
-          JSON.stringify({ error: 'Riot API key is missing. Please check your environment configuration.' }),
-          { 
-            status: 500, 
-            headers: { 
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-            } 
-          }
-        );
-      }
-      
-      // Extract the Riot API path from the request
-      const riotApiPath = url.pathname.replace('/api/riot', '');
-      const riotApiUrl = `https://asia.api.riotgames.com${riotApiPath}${url.search}`;
-      
-      // Forward the request to Riot API with the API key
-      const riotApiRequest = new Request(riotApiUrl, {
-        method: request.method,
-        headers: {
-          'X-Riot-Token': apiKey,
-        },
-      });
-      
-      try {
-        const response = await fetch(riotApiRequest);
-        const data = await response.text();
-        return new Response(data, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-          },
+        return new Response(JSON.stringify({ error: 'Missing RIOT_API_KEY' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
-      } catch (error) {
+      }
+
+      const originalPath = url.pathname.substring('/api/riot'.length) || '/';
+      const tagParam = url.searchParams.get('tag') || '';
+
+      let targetHost = '';
+      if (originalPath.startsWith('/riot/account/')) {
+        // Account API uses regional routing; pick by player's tagline
+        const regional = tagToRegionalHost(tagParam || 'NA1');
+        targetHost = `${regional}.api.riotgames.com`;
+        url.searchParams.delete('tag');
+      } else if (originalPath.startsWith('/lol/match/v5/')) {
+        const regional = tagToRegionalHost(tagParam || 'NA1');
+        targetHost = `${regional}.api.riotgames.com`;
+        url.searchParams.delete('tag');
+      } else {
+        const platform = tagToPlatformHost(tagParam || 'NA1');
+        targetHost = `${platform}.api.riotgames.com`;
+        url.searchParams.delete('tag');
+      }
+
+      const targetUrl = `https://${targetHost}${originalPath}${url.search}`;
+
+      const init: RequestInit = {
+        method: request.method,
+        headers: { 'X-Riot-Token': apiKey },
+      };
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        init.body = await request.arrayBuffer();
+      }
+
+      try {
+        const upstream = await fetch(targetUrl, init);
+        const response = new Response(upstream.body, upstream);
+        response.headers.set('Access-Control-Allow-Origin', '*');
+        return response;
+      } catch (e) {
         return new Response(
-          JSON.stringify({ error: 'Failed to fetch from Riot API', details: error instanceof Error ? error.message : 'Unknown error' }),
-          { 
-            status: 500, 
-            headers: { 
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-            } 
-          }
+          JSON.stringify({ error: 'Proxy error', details: e instanceof Error ? e.message : 'Unknown' }),
+          { status: 502, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
         );
       }
     }
-    
-    // Let Wrangler's assets feature serve static files; for SPA fall back to index.html
-    const isAsset = url.pathname.includes('.') || url.pathname.startsWith('/assets/');
-    if (isAsset) {
-      // Return 404 to let Wrangler's assets serving handle the file
-      return new Response(null, { status: 404 });
-    }
-    // For client-side routes, serve index.html from the assets directory
-    const indexRequest = new Request(new URL('/index.html', url.origin), request);
-    return fetch(indexRequest);
+
+    return new Response('Not Found', { status: 404 });
   },
 };

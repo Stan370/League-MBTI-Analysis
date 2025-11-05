@@ -11,13 +11,7 @@ const DDRAGON_VERSION = '14.15.1';
 
 // --- HELPER: API FETCHING ---
 async function apiFetch<T>(url: string): Promise<T> {
-    // Convert Riot API URL to proxy URL if it's a full URL, otherwise use as-is (already a proxy path)
-    let proxyUrl = url;
-    if (url.startsWith('https://asia.api.riotgames.com')) {
-        proxyUrl = url.replace('https://asia.api.riotgames.com', '/api/riot');
-    }
-    
-    const response = await fetch(proxyUrl);
+    const response = await fetch(url);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         if (response.status === 403) throw new Error("Forbidden: Check your Riot API key.");
@@ -31,16 +25,18 @@ async function apiFetch<T>(url: string): Promise<T> {
 }
 
 async function getPuuid(gameName: string, tagLine: string): Promise<string> {
-    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`);
+    // Pass the routing tagline so Worker can choose the nearest regional cluster
+    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}?tag=${encodeURIComponent(tagLine)}`);
     return data.puuid;
 }
 
-async function getMatchIds(puuid: string): Promise<string[]> {
-    return apiFetch<string[]>(`${API_BASE_MATCH}/lol/match/v5/matches/by-puuid/${puuid}/ids?queue=420&start=0&count=20`);
+async function getMatchIds(puuid: string, tagLine: string): Promise<string[]> {
+    // Pass the tag so the Worker can route to the correct regional host
+    return apiFetch<string[]>(`${API_BASE_MATCH}/lol/match/v5/matches/by-puuid/${puuid}/ids?queue=420&start=0&count=20&tag=${encodeURIComponent(tagLine)}`);
 }
 
-async function getMatchDetails(matchId: string): Promise<MatchDto> {
-    return apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}`);
+async function getMatchDetails(matchId: string, tagLine: string): Promise<MatchDto> {
+    return apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}?tag=${encodeURIComponent(tagLine)}`);
 }
 
 // --- HELPER: DATA PROCESSING & ANALYSIS ---
@@ -141,7 +137,7 @@ function generateAnalysis(stats: AggregatedStats, summonerName: string, tag: str
     const kda = (stats.avgKills + stats.avgAssists) / (stats.avgDeaths || 1);
     const strengths = [];
     
-    // Score-based MBTI determination
+    // Score-based MBTI determination TODO: improve this
     let scores = { E: 0, I: 0, N: 0, S: 0, T: 0, F: 0, J: 0, P: 0 };
     if (stats.avgDamageDealtPercentage > 28) scores.E++; else scores.I++;
     if (stats.avgKills > 7) scores.E++; else scores.I++;
@@ -227,14 +223,16 @@ export const analyzePlayer = async (summonerNameWithTag: string): Promise<Analys
     }
 
     const puuid = await getPuuid(gameName, tagLine);
-    const matchIds = await getMatchIds(puuid);
+    const matchIds = await getMatchIds(puuid, tagLine);
 
     if (matchIds.length < 5) {
         throw new Error("Not enough recent ranked matches found to generate a reliable analysis (min 5).");
     }
 
-    const matchPromises = matchIds.map(id => getMatchDetails(id));
+    const matchPromises = matchIds.map(id => getMatchDetails(id, tagLine));
     const matches = await Promise.all(matchPromises);
+    // Debug logging after all fetched
+    console.log('[analyzePlayer] fetched matches:', matches.length);
 
     const aggregatedStats = processMatches(matches, puuid);
     if (aggregatedStats.totalGames < 5) {
