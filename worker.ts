@@ -21,8 +21,16 @@ function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' 
 export default {
   async fetch(request: Request, env: { RIOT_API_KEY?: string }): Promise<Response> {
     const url = new URL(request.url);
+    const startTime = Date.now();
 
-    if (url.pathname.startsWith('/api/riot')) {
+    console.log('[Worker] Incoming request', {
+      method: request.method,
+      path: url.pathname,
+      search: url.search,
+    });
+
+    // Handle only API proxy paths (/api/riot/...); avoid matching unrelated routes
+    if (url.pathname === '/api/riot' || url.pathname.startsWith('/api/riot/')) {
       if (request.method === 'OPTIONS') {
         return new Response(null, {
           status: 204,
@@ -45,11 +53,13 @@ export default {
 
       const originalPath = url.pathname.substring('/api/riot'.length) || '/';
       const tagParam = url.searchParams.get('tag') || '';
+      const pathSegments = originalPath.split('/').filter(Boolean);
 
       let targetHost = '';
       if (originalPath.startsWith('/riot/account/')) {
-        // Account API uses regional routing; pick by player's tagline
-        const regional = tagToRegionalHost(tagParam || 'NA1');
+        // Account API uses regional routing; prefer explicit ?tag, fallback to last segment (tagLine)
+        const tagFromPath = pathSegments[pathSegments.length - 1] || '';
+        const regional = tagToRegionalHost(tagParam || tagFromPath || 'NA1');
         targetHost = `${regional}.api.riotgames.com`;
         url.searchParams.delete('tag');
       } else if (originalPath.startsWith('/lol/match/v5/')) {
@@ -64,6 +74,12 @@ export default {
 
       const targetUrl = `https://${targetHost}${originalPath}${url.search}`;
 
+      console.log('[Worker] Routing decision', {
+        originalPath,
+        tagParam,
+        targetHost,
+      });
+
       const init: RequestInit = {
         method: request.method,
         headers: { 'X-Riot-Token': apiKey },
@@ -73,11 +89,41 @@ export default {
       }
 
       try {
+        console.log('[Worker] Proxying request', { targetUrl, method: request.method });
         const upstream = await fetch(targetUrl, init);
+        const durationMs = Date.now() - startTime;
+        if (upstream.status === 403) {
+          console.warn('[Worker] Forbidden from Riot API - possible invalid/expired API key', {
+            status: upstream.status,
+            durationMs,
+            targetUrl,
+          });
+          return new Response(
+            JSON.stringify({
+              error: 'Forbidden',
+              details: 'Riot API rejected the request. The API key may be invalid or expired.',
+            }),
+            { status: 403, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }
+          );
+        }
         const response = new Response(upstream.body, upstream);
         response.headers.set('Access-Control-Allow-Origin', '*');
+        console.log('[Worker] Upstream response', {
+          status: upstream.status,
+          durationMs,
+          targetUrl,
+          rateLimits: {
+            app: upstream.headers.get('X-App-Rate-Limit'),
+            method: upstream.headers.get('X-Method-Rate-Limit'),
+            remaining: upstream.headers.get('X-Rate-Limit-Remaining'),
+          },
+        });
         return response;
       } catch (e) {
+        console.error('[Worker] Proxy error', {
+          targetUrl,
+          error: e instanceof Error ? e.message : 'Unknown',
+        });
         return new Response(
           JSON.stringify({ error: 'Proxy error', details: e instanceof Error ? e.message : 'Unknown' }),
           { status: 502, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } }

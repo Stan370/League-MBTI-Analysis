@@ -31,8 +31,22 @@ async function getPuuid(gameName: string, tagLine: string): Promise<string> {
 }
 
 async function getMatchIds(puuid: string, tagLine: string): Promise<string[]> {
-    // Pass the tag so the Worker can route to the correct regional host
-    return apiFetch<string[]>(`${API_BASE_MATCH}/lol/match/v5/matches/by-puuid/${puuid}/ids?queue=420&start=0&count=20&tag=${encodeURIComponent(tagLine)}`);
+    // Query only matches in 2025. Keep the tag so the Worker can route correctly.
+    const startOf2025Sec = Math.floor(Date.UTC(2025, 0, 1, 0, 0, 0) / 1000);
+    const endOf2025Sec = Math.floor(Date.UTC(2025, 11, 31, 23, 59, 59) / 1000);
+
+    const base = `${API_BASE_MATCH}/lol/match/v5/matches/by-puuid/${puuid}/ids`;
+    const params = new URLSearchParams({
+        queue: '420', // Ranked Solo
+        start: '0',
+        count: '20',
+        startTime: String(startOf2025Sec),
+        endTime: String(endOf2025Sec),
+        tag: tagLine,
+    });
+    const url = `${base}?${params.toString()}`;
+    console.log('[getMatchIds] params', Object.fromEntries(params.entries()));
+    return apiFetch<string[]>(url);
 }
 
 async function getMatchDetails(matchId: string, tagLine: string): Promise<MatchDto> {
@@ -224,7 +238,7 @@ export const analyzePlayer = async (summonerNameWithTag: string): Promise<Analys
 
     const puuid = await getPuuid(gameName, tagLine);
     const matchIds = await getMatchIds(puuid, tagLine);
-
+    console.log(puuid, 'matchID:',matchIds)
     if (matchIds.length < 5) {
         throw new Error("Not enough recent ranked matches found to generate a reliable analysis (min 5).");
     }
