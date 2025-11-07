@@ -1,6 +1,9 @@
 {
   "name": "league-mbti-analysis",
   "compatibility_date": "2025-11-04",
-  "pages_build_output_dir": "./dist"
+  "pages_build_output_dir": "./dist",
+  "vars": {
+    "RIOT_API_KEY": "RGAPI-49d50bfd-fad5-4f86-829a-a86bcf73d00c"
+  }
 }
 

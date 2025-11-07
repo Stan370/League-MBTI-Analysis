@@ -11,77 +11,45 @@ A React application that analyzes League of Legends player behavior and provides
 - npm
 - Riot API Key (get from [Riot Developer Portal](https://developer.riotgames.com/))
 
-## Local Development
+## ⚡ Development & Deployment: Vite <sup>and</sup> Wrangler Both Supported
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+This project can be developed, built, and deployed using **either plain Vite (for local/frontend dev)** or with **Cloudflare Wrangler/Pages Functions** (for edge/serverless/API proxy)—choose the workflow that fits your needs!
 
-2. **Set up environment variables:**
-   
-   Create a `.env.local` file in the project root:
-   ```bash
-   RIOT_API_KEY=your_riot_api_key_here
-   ```
+### 1. Vite Local (Recommended for frontend-only)
 
-3. **Run the development server:**
-   ```bash
-   npm run dev
-   ```
-
-4. **Open your browser:**
-   
-   Navigate to `http://localhost:3000`
-
-## Build for Production
+- Rapid local development
+- Run backend/API mocks or call real Riot API via Cloudflare edge proxy
 
 ```bash
-npm run build
+npm install
+npm run dev
+# Visit http://localhost:3000
 ```
+- Configure `.env.local` if you want to set Riot API key for local service mocks.
 
-The built files will be in the `dist` directory.
+### 2. Cloudflare Wrangler/Pages (Edge Functions, API Proxy)
 
-## Deployment to Cloudflare Pages
+- Serverless API proxy using Cloudflare Functions (`functions/api/riot/[[path]].ts`)
+- Supports edge routing, CORS, and API key protection—great for real Riot API calls
+- Two ways to use:
+    - **Dev**: `npx wrangler pages dev`  — local preview with edge logic
+    - **Build & Deploy**:
+        - Build frontend: `npm run build`
+        - Deploy backend+frontend: `npx wrangler pages deploy dist`  
+        - Or use GitHub Actions CI deployment
+- Set `RIOT_API_KEY` in Cloudflare dashboard (Settings → Environment Variables) or in `wrangler.jsonc`, depending on environment.
 
-### Automatic Deployment (GitHub Actions)
+### 3. Which One Should I Use?
 
-The project is configured for automatic deployment to Cloudflare Pages via GitHub Actions.
+| Use Case                     | Recommended Mode           |
+|-----------------------------|----------------------------|
+| Frontend/dev UX              | Vite (`npm run dev`)       |
+| Fullstack/API (prod/preview) | Cloudflare Wrangler/Pages  |
+| Testing (mock data)          | Either                     |
 
-**Setup Steps:**
-
-1. **Create a Cloudflare Pages project:**
-   - Go to [Cloudflare Dashboard](https://dash.cloudflare.com/)
-   - Navigate to Workers & Pages > Create application > Pages
-   - Note your Account ID (found in the URL or dashboard)
-
-2. **Generate a Cloudflare API Token:**
-   - Go to [API Tokens](https://dash.cloudflare.com/profile/api-tokens)
-   - Create Token > Edit Cloudflare Workers template
-   - Permissions: Account > Cloudflare Pages > Edit
-
-3. **Add GitHub Secrets:**
-   
-   Go to your repository Settings > Secrets and variables > Actions, and add:
-   - `CLOUDFLARE_API_TOKEN` - Your Cloudflare API token
-   - `CLOUDFLARE_ACCOUNT_ID` - Your Cloudflare Account ID
-   - `RIOT_API_KEY` - Your Riot API key
-
-4. **Deploy:**
-   
-   Push to the `main` branch, and GitHub Actions will automatically build and deploy to Cloudflare Pages.
-
-### Manual Deployment
-
-You can also deploy manually using Wrangler:
-
-```bash
-npm run build
-npx wrangler pages deploy dist --project-name=league-mbti-analysis
-
-# Or if you have wrangler.jsonc configured:
-npx wrangler pages deploy
-```
+- Both code paths share core logic (React UI & API proxying)!
+- If you only deploy to Cloudflare Pages, you do **not** need `worker.ts` (all logic is in `functions/api/riot/[[path]].ts`).
+- If you want custom, global proxying or advanced routing, you can add a traditional Worker script.
 
 ## Technology Stack
 
