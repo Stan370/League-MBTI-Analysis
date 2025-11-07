@@ -13,6 +13,7 @@ dist-ssr
 *.local
 .wrangler
 # Environment files
+wrangler.jsonc
 .env
 .dev.vars
 # Editor directories and files
