@@ -30,18 +30,23 @@ async function getPuuid(gameName: string, tagLine: string): Promise<string> {
     return data.puuid;
 }
 
-async function getMatchIds(puuid: string, tagLine: string): Promise<string[]> {
+async function getMatchIds(puuid: string, tagLine: string, queueId?: number): Promise<string[]> {
     // Query only matches in 2025. Keep the tag so the Worker can route correctly.
     const startOf2025Sec = Math.floor(Date.UTC(2025, 0, 1, 0, 0, 0) / 1000);
 
     const base = `${API_BASE_MATCH}/lol/match/v5/matches/by-puuid/${puuid}/ids`;
     const params = new URLSearchParams({
-        // queue: '420', // Ranked Solo
         start: '0',
         count: '20',
         startTime: String(startOf2025Sec),
         tag: tagLine,
     });
+    
+    // Filter by queueId if provided (420 = Ranked Solo/Duo, 440 = Ranked Flex)
+    if (queueId !== undefined) {
+        params.set('queue', String(queueId));
+    }
+    
     const url = `${base}?${params.toString()}`;
     console.log('[getMatchIds] params', Object.fromEntries(params.entries()));
     return apiFetch<string[]>(url);
@@ -63,6 +68,9 @@ interface AggregatedStats {
     avgDamageDealtPerMin: number;
     avgDamageDealtPercentage: number;
     avgGoldPerMin: number;
+    queueBreakdown: Record<number, { games: number; wins: number }>; // queueId -> stats
+    rankedStats: { games: number; wins: number }; // Ranked 统计
+    casualStats: { games: number; wins: number }; // Casual 统计
     championStats: Record<string, {
         games: number;
         wins: number;
@@ -73,21 +81,108 @@ interface AggregatedStats {
     }>;
 }
 
-function processMatches(matches: MatchDto[], puuid: string): AggregatedStats {
+/**
+ * Queue ID 映射表 - 只处理指定的 5 种队列类型
+ */
+const QUEUE_NAMES: Record<number, string> = {
+    400: '5v5 Draft Pick games',
+    420: '5v5 Ranked Solo games',
+    430: '5v5 Blind Pick games',
+    440: '5v5 Ranked Flex games',
+    450: '5v5 ARAM games',
+};
+
+/**
+ * Ranked 队列 ID
+ */
+const RANKED_QUEUE_IDS = [420, 440];
+
+/**
+ * Casual 队列 ID
+ */
+const CASUAL_QUEUE_IDS = [400, 430, 450];
+
+/**
+ * 所有允许的队列 ID
+ */
+const ALLOWED_QUEUE_IDS = [...RANKED_QUEUE_IDS, ...CASUAL_QUEUE_IDS];
+
+function processMatches(matches: MatchDto[], puuid: string, allowedQueueIds?: number[]): AggregatedStats {
     const initialStats: AggregatedStats = {
         totalGames: 0, wins: 0, avgKills: 0, avgDeaths: 0, avgAssists: 0,
         avgVisionScorePerMin: 0, avgDamageDealtPerMin: 0, avgDamageDealtPercentage: 0,
-        avgGoldPerMin: 0, championStats: {},
+        avgGoldPerMin: 0, queueBreakdown: {}, 
+        rankedStats: { games: 0, wins: 0 },
+        casualStats: { games: 0, wins: 0 },
+        championStats: {},
     };
 
     let totalKills = 0, totalDeaths = 0, totalAssists = 0, totalVisionScore = 0,
         totalDamage = 0, totalGold = 0, totalDuration = 0, totalTeamDamagePercent = 0;
 
-    for (const match of matches) {
-        if (!match.info || match.info.gameMode === "CHERRY") continue;
+    let skippedByGameType = 0;
+    let skippedByQueue = 0;
+    let skippedByPlayer = 0;
+    let processedCount = 0;
 
+    for (const match of matches) {
+        // 验证 match.info 存在
+        if (!match.info) {
+            console.warn('[processMatches] Skipping match with missing info:', match.metadata?.matchId);
+            continue;
+        }
+
+        // 只处理 MATCHED_GAME 类型
+        if (match.info.gameType !== "MATCHED_GAME") {
+            skippedByGameType++;
+            continue;
+        }
+
+        // 验证 queueId 存在    
+        if (match.info.queueId === undefined || match.info.queueId === null) {
+            console.warn('[processMatches] Skipping match with missing queueId:', match.metadata?.matchId);
+            continue;
+        }
+
+        // 只处理允许的队列类型
+        if (!ALLOWED_QUEUE_IDS.includes(match.info.queueId)) {
+            skippedByQueue++;
+            continue;
+        }
+
+        // 如果指定了允许的 queueId，进行进一步过滤
+        if (allowedQueueIds && !allowedQueueIds.includes(match.info.queueId)) {
+            skippedByQueue++;
+            continue;
+        }
+
+        // 查找指定玩家的数据
         const player = match.info.participants.find(p => p.puuid === puuid);
-        if (!player) continue;
+        if (!player) {
+            skippedByPlayer++;
+            console.warn(`[processMatches] Player ${puuid} not found in match ${match.metadata?.matchId}`);
+            continue;
+        }
+
+        // 记录 queueId 统计
+        if (!initialStats.queueBreakdown[match.info.queueId]) {
+            initialStats.queueBreakdown[match.info.queueId] = { games: 0, wins: 0 };
+        }
+        initialStats.queueBreakdown[match.info.queueId].games++;
+        if (player.win) {
+            initialStats.queueBreakdown[match.info.queueId].wins++;
+        }
+
+        // 区分 Ranked 和 Casual
+        if (RANKED_QUEUE_IDS.includes(match.info.queueId)) {
+            initialStats.rankedStats.games++;
+            if (player.win) initialStats.rankedStats.wins++;
+        } else if (CASUAL_QUEUE_IDS.includes(match.info.queueId)) {
+            initialStats.casualStats.games++;
+            if (player.win) initialStats.casualStats.wins++;
+        }
+
+        processedCount++;
         
         const teamTotalDamage = match.info.participants
             .filter(p => p.teamId === player.teamId)
@@ -132,6 +227,7 @@ function processMatches(matches: MatchDto[], puuid: string): AggregatedStats {
         }
     }
 
+    // 计算平均值
     if (initialStats.totalGames > 0) {
         initialStats.avgKills = totalKills / initialStats.totalGames;
         initialStats.avgDeaths = totalDeaths / initialStats.totalGames;
@@ -141,6 +237,37 @@ function processMatches(matches: MatchDto[], puuid: string): AggregatedStats {
         initialStats.avgDamageDealtPercentage = (totalTeamDamagePercent / initialStats.totalGames) * 100;
         initialStats.avgGoldPerMin = totalGold / totalDuration;
     }
+
+    // 输出处理统计信息
+    console.log('[processMatches] Processing summary:', {
+        totalMatches: matches.length,
+        processed: processedCount,
+        skippedByGameType,
+        skippedByQueue,
+        skippedByPlayer,
+        rankedStats: {
+            games: initialStats.rankedStats.games,
+            wins: initialStats.rankedStats.wins,
+            winRate: initialStats.rankedStats.games > 0 
+                ? ((initialStats.rankedStats.wins / initialStats.rankedStats.games) * 100).toFixed(1) + '%'
+                : 'N/A',
+        },
+        casualStats: {
+            games: initialStats.casualStats.games,
+            wins: initialStats.casualStats.wins,
+            winRate: initialStats.casualStats.games > 0
+                ? ((initialStats.casualStats.wins / initialStats.casualStats.games) * 100).toFixed(1) + '%'
+                : 'N/A',
+        },
+        queueBreakdown: Object.entries(initialStats.queueBreakdown).map(([queueId, stats]) => ({
+            queueId: Number(queueId),
+            queueName: QUEUE_NAMES[Number(queueId)] || `Queue ${queueId}`,
+            type: RANKED_QUEUE_IDS.includes(Number(queueId)) ? 'Ranked' : 'Casual',
+            games: stats.games,
+            wins: stats.wins,
+            winRate: ((stats.wins / stats.games) * 100).toFixed(1) + '%',
+        })),
+    });
 
     return initialStats;
 }
@@ -228,27 +355,41 @@ function generateAnalysis(stats: AggregatedStats, summonerName: string, tag: str
 }
 
 // --- MAIN EXPORTED FUNCTION ---
-export const analyzePlayer = async (summonerNameWithTag: string): Promise<AnalysisResult> => {
+export const analyzePlayer = async (
+    summonerNameWithTag: string,
+    options?: { queueId?: number; allowedQueueIds?: number[] }
+): Promise<AnalysisResult> => {
     const [gameName, tagLine] = summonerNameWithTag.split('#');
     if (!gameName || !tagLine) {
         throw new Error("Invalid format. Please use 'Summoner Name#Tag'.");
     }
 
     const puuid = await getPuuid(gameName, tagLine);
-    const matchIds = await getMatchIds(puuid, tagLine);
-    console.log(puuid, 'matchID:',matchIds)
+    console.log('[analyzePlayer] Resolved PUUID:', puuid, 'for', summonerNameWithTag);
+
+    // 默认只获取 Ranked Solo/Duo (420)，但允许自定义
+    const queueId = options?.queueId ?? 420;
+    const matchIds = await getMatchIds(puuid, tagLine, queueId);
+    console.log('[analyzePlayer] Found match IDs:', matchIds.length, matchIds);
+    
     if (matchIds.length < 5) {
-        throw new Error("Not enough recent ranked matches found to generate a reliable analysis (min 5).");
+        throw new Error(`Not enough recent matches found (${matchIds.length} found, min 5 required). Try a different queue type or time range.`);
     }
 
     const matchPromises = matchIds.map(id => getMatchDetails(id, tagLine));
     const matches = await Promise.all(matchPromises);
-    // Debug logging after all fetched
-    console.log('[analyzePlayer] fetched matches:', matches.length);
+    console.log('[analyzePlayer] Fetched match details:', matches.length);
 
-    const aggregatedStats = processMatches(matches, puuid);
+    // 默认只处理 Ranked Solo/Duo (420)，但允许自定义
+    const allowedQueueIds = options?.allowedQueueIds ?? [420];
+    const aggregatedStats = processMatches(matches, puuid, allowedQueueIds);
+    
     if (aggregatedStats.totalGames < 5) {
-        throw new Error(`Only found ${aggregatedStats.totalGames} valid matches. A minimum of 5 is required.`);
+        const queueInfo = allowedQueueIds.map(q => QUEUE_NAMES[q] || `Queue ${q}`).join(', ');
+        throw new Error(
+            `Only found ${aggregatedStats.totalGames} valid matches in ${queueInfo} (min 5 required). ` +
+            `Skipped: ${matches.length - aggregatedStats.totalGames} matches.`
+        );
     }
     
     return generateAnalysis(aggregatedStats, gameName, tagLine);

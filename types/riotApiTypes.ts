@@ -16,6 +16,8 @@ export interface InfoDto {
     gameDuration: number;
     gameEndTimestamp: number;
     gameMode: string;
+    gameType?: string;
+    queueId: number; // 420 = Ranked Solo/Duo, 440 = Ranked Flex, etc.
     participants: ParticipantDto[];
     teams: TeamDto[];
 }
