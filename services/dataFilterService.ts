@@ -5,14 +5,17 @@ export interface FilteredPlayerData {
   kills: number;
   deaths: number;
   assists: number;
-  championName: string;
-  win: boolean;
+  totalMinionsKilled: number; // CS (补刀)
+  neutralMinionsKilled: number; // 野怪数 (加上 totalMinionsKilled 可以得到总 CS)
+  totalDamageDealtToChampions: number; // 对英雄伤害
   goldEarned: number;
-  totalDamageDealtToChampions: number;
+  championName: string;
+  teamId: number;
+  win: boolean;
+  position: string; // teamPosition
   visionScore: number;
   gameDuration: number;
   gameMode: string;
-  position: string;
 }
 
 // 批量处理配置
@@ -40,14 +43,17 @@ export function extractPlayerData(
     kills: participant.kills,
     deaths: participant.deaths,
     assists: participant.assists,
-    championName: participant.championName,
-    win: participant.win,
+    totalMinionsKilled: participant.totalMinionsKilled, // CS (补刀)
+    neutralMinionsKilled: participant.neutralMinionsKilled, // 野怪数
+    totalDamageDealtToChampions: participant.totalDamageDealtToChampions, // 对英雄伤害
     goldEarned: participant.goldEarned,
-    totalDamageDealtToChampions: participant.totalDamageDealtToChampions,
+    championName: participant.championName,
+    teamId: participant.teamId,
+    win: participant.win,
+    position: participant.teamPosition || participant.individualPosition,
     visionScore: participant.visionScore,
     gameDuration: match.info.gameDuration,
     gameMode: match.info.gameMode,
-    position: participant.teamPosition || participant.individualPosition,
   };
 }
 

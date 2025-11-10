@@ -4,11 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wrangler pages dev\"",  
+    "dev": "concurrently \"vite\" \"wrangler pages dev\"",
     "build": "vite build && npx wrangler pages deploy dist --project-name=league-mbti-analysis",
     "preview": "vite preview"
   },
   "dependencies": {
+    "p-limit": "^7.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^3.3.0"

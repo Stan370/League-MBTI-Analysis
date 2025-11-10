@@ -15,6 +15,31 @@ export interface GrowthDataPoint {
   kda: number;
 }
 
+import type { FilteredPlayerData } from './services/dataFilterService';
+
+export interface MatchData extends FilteredPlayerData {
+  matchId: string;
+  gameEndTimestamp: number;
+  queueId: number;
+}
+
+export interface AggregatedSummary {
+  totalGames: number;
+  wins: number;
+  winRate: number;
+  avgKills: number;
+  avgDeaths: number;
+  avgAssists: number;
+  avgKDA: number;
+  avgCS: number;
+  avgTotalCS: number;
+  avgDamage: number;
+  avgGold: number;
+  avgVisionScore: number;
+  avgDamagePerMin: number;
+  avgGoldPerMin: number;
+}
+
 export interface AnalysisResult {
   summonerName: string;
   tag: string;
@@ -32,4 +57,6 @@ export interface AnalysisResult {
   }[];
   growthCurve: GrowthDataPoint[];
   topChampions: ChampionData[];
+  matchData: MatchData[];
+  aggregatedSummary: AggregatedSummary;
 }

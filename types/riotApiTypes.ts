@@ -41,6 +41,7 @@ export interface ParticipantDto {
     totalHeal: number;
     totalHealsOnTeammates: number;
     totalMinionsKilled: number;
+    neutralMinionsKilled: number;
     turretKills: number;
     turretTakedowns: number;
     damageDealtToBuildings: number;

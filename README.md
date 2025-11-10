@@ -11,7 +11,7 @@ A React application that analyzes League of Legends player behavior and provides
 - npm
 - Riot API Key (get from [Riot Developer Portal](https://developer.riotgames.com/))
 
-## ⚡ Development & Deployment: Vite <sup>and</sup> Wrangler Both Supported
+## ⚡ Development & Deployment: Vite and Wrangler Both Supported
 
 This project can be developed, built, and deployed using **either plain Vite (for local/frontend dev)** or with **Cloudflare Wrangler/Pages Functions** (for edge/serverless/API proxy)—choose the workflow that fits your needs!
 
