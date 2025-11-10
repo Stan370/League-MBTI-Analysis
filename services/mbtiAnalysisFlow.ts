@@ -5,6 +5,7 @@
  */
 
 import type { MatchDto } from '../types/riotApiTypes';
+import { ALLOWED_QUEUE_IDS } from '../types/riotApiTypes';
 import { extractPlayerData, type FilteredPlayerData } from './dataFilterService';
 import { calculateMBTIScores, determineMBTI, type MBTIScores } from './mbtiMappingService';
 
@@ -29,7 +30,6 @@ export async function analyzeMBTIFromMatches(
   
   // 步骤1: 数据过滤 (150字段 → 20字段)
   // 只处理 gameType === "MATCHED_GAME" 且 queueId 在允许范围内的比赛
-  const ALLOWED_QUEUE_IDS = [400, 420, 430, 440, 450];
   const filtered: FilteredPlayerData[] = [];
   for (const match of matches) {
     // 验证 gameType

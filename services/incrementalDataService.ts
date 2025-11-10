@@ -1,6 +1,7 @@
 import type { FilteredPlayerData, AggregatedStats } from './dataFilterService';
 import { extractPlayerData, aggregateFilteredData } from './dataFilterService';
 import type { MatchDto } from '../types/riotApiTypes';
+import { ALLOWED_QUEUE_IDS } from '../types/riotApiTypes';
 
 /**
  * 增量数据加载器 - 支持分页和进度追踪
@@ -32,7 +33,6 @@ export class IncrementalDataLoader {
       try {
         const match = await this.fetchMatch(range[i]);
         // 验证 gameType 和 queueId
-        const ALLOWED_QUEUE_IDS = [400, 420, 430, 440, 450];
         if (!match.info || match.info.gameType !== "MATCHED_GAME") {
           continue;
         }

@@ -70,3 +70,31 @@ export interface ObjectiveDto {
     first: boolean;
     kills: number;
 }
+
+// Queue ID constants
+/**
+ * Queue ID to name mapping
+ */
+export const QUEUE_NAMES: Record<number, string> = {
+    400: '5v5 Draft Pick games',
+    420: '5v5 Ranked Solo games',
+    430: '5v5 Blind Pick games',
+    440: '5v5 Ranked Flex games',
+    450: '5v5 ARAM games',
+    490: '5v5 quickplay',
+};
+
+/**
+ * Ranked queue IDs
+ */
+export const RANKED_QUEUE_IDS: number[] = [420, 440];
+
+/**
+ * Casual queue IDs
+ */
+export const CASUAL_QUEUE_IDS: number[] = [400, 430, 450, 490];
+
+/**
+ * All allowed queue IDs (union of ranked and casual)
+ */
+export const ALLOWED_QUEUE_IDS: number[] = [...RANKED_QUEUE_IDS, ...CASUAL_QUEUE_IDS];

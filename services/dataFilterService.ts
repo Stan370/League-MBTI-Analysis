@@ -1,4 +1,5 @@
 import type { MatchDto, ParticipantDto } from '../types/riotApiTypes';
+import { ALLOWED_QUEUE_IDS } from '../types/riotApiTypes';
 
 // 精简的玩家数据结构 - 只保留关键指标
 export interface FilteredPlayerData {
@@ -68,7 +69,6 @@ export function batchFilterMatches(
   const filtered: FilteredPlayerData[] = [];
   const limit = Math.min(matches.length, config.maxMatches);
 
-  const ALLOWED_QUEUE_IDS = [400, 420, 430, 440, 450];
   for (let i = 0; i < limit; i++) {
     const match = matches[i];
     // 验证 gameType 和 queueId
@@ -103,7 +103,6 @@ export async function streamProcessMatches(
     const batch = matchIds.slice(i, Math.min(i + config.batchSize, limit));
     const matches = await Promise.all(batch.map(id => fetchMatch(id)));
 
-    const ALLOWED_QUEUE_IDS = [400, 420, 430, 440, 450];
     for (const match of matches) {
       // 验证 gameType 和 queueId
       if (!match.info || match.info.gameType !== "MATCHED_GAME") {

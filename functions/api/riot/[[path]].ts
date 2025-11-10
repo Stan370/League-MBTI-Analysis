@@ -13,7 +13,6 @@ function tagToPlatformHost(tag: string): string {
   return map[upper] || 'na1';
 }
 
-// SEA 合入 ASIA，仅返回 'americas' | 'europe' | 'asia'
 function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' {
   const upper = tag.toUpperCase();
   if ([
@@ -26,6 +25,35 @@ function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' {
     'KR', 'JP1', 'PH2', 'SG2', 'TH2', 'TW2', 'VN2',
   ].includes(upper)) return 'asia';
   return 'asia'; // fallback 简化
+}
+
+function isKnownPlatformOrRegionalTag(tag: string): boolean {
+  if (!tag) return false;
+  const upper = tag.toUpperCase();
+  const knownPlatform = [
+    'NA1','BR1','LA1','LA2','OC1','EUN1','EUW1','TR1','RU','KR','JP1','PH2','SG2','TH2','TW2','VN2'
+  ];
+  return knownPlatform.includes(upper);
+}
+
+function extractPuuidFromPath(pathname: string): string | null {
+  // common forms:
+  // - /lol/match/v5/matches/by-puuid/{puuid}/ids
+  // - /riot/account/v1/region/by-game/{game}/by-puuid/{puuid}
+  const byPuuidMatch = pathname.match(/\/by-puuid\/([^/?#]+)/i);
+  if (byPuuidMatch && byPuuidMatch[1]) return byPuuidMatch[1];
+  return null;
+}
+
+function inferGameFromPath(pathname: string): string {
+  if (pathname.startsWith('/lol/')) return 'lol';
+  if (pathname.startsWith('/riot/account/')) {
+    // may include /by-game/{game}/
+    const byGame = pathname.match(/\/by-game\/([^/]+)/i);
+    if (byGame && byGame[1]) return byGame[1];
+  }
+  // default to lol for this app
+  return 'lol';
 }
 
 // CORS 白名单机制
@@ -72,26 +100,46 @@ export async function onRequest(context: {
   const tagParam = url.searchParams.get('tag') || '';
 
   let targetHost = '';
-  if (originalPath.startsWith('/riot/account/')) {
-    // 🚨 强制要求 ?tag
-    if (!tagParam) {
-      return new Response(JSON.stringify({ error: 'Missing ?tag=SERVER (e.g., NA1, KR, PH2)' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
-      });
+  const needsRegional = originalPath.startsWith('/riot/account/') || originalPath.startsWith('/lol/match/v5/');
+  if (needsRegional) {
+    let resolvedRegional: 'americas' | 'europe' | 'asia' | null = null;
+    if (isKnownPlatformOrRegionalTag(tagParam)) {
+      resolvedRegional = tagToRegionalHost(tagParam);
+    } else {
+      // Try resolve via active region API if puuid is present
+      const puuid = extractPuuidFromPath(originalPath);
+      const game = inferGameFromPath(originalPath);
+      if (puuid) {
+        try {
+          // This endpoint is served from a regional cluster; americas hosts account for global queries reliably
+          const regionLookupUrl = `https://americas.api.riotgames.com/riot/account/v1/region/by-game/${encodeURIComponent(game)}/by-puuid/${encodeURIComponent(puuid)}`;
+          const lookupResp = await fetch(regionLookupUrl, { headers: { 'X-Riot-Token': apiKey } });
+          if (lookupResp.ok) {
+            const regionDto: { puuid: string; game: string; region: 'americas' | 'europe' | 'asia' } = await lookupResp.json();
+            if (regionDto && regionDto.region) {
+              resolvedRegional = regionDto.region;
+            }
+          } else {
+            console.warn('[Functions] Failed to resolve active region', { status: lookupResp.status, originalPath });
+          }
+        } catch (e) {
+          console.error('[Functions] Error resolving active region', { error: e instanceof Error ? e.message : 'Unknown' });
+        }
+      }
     }
-    const regional = tagToRegionalHost(tagParam);
-    targetHost = `${regional}.api.riotgames.com`;
-    url.searchParams.delete('tag');
-  } else if (originalPath.startsWith('/lol/match/v5/')) {
-    if (!tagParam) {
-      return new Response(JSON.stringify({ error: 'Missing ?tag=SERVER (e.g., NA1, KR, PH2)' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
-      });
+
+    // As a fallback for account lookups where we can't infer region, default to americas
+    if (!resolvedRegional) {
+      if (originalPath.startsWith('/riot/account/v1/accounts/by-riot-id')) {
+        resolvedRegional = 'americas';
+      } else {
+        return new Response(JSON.stringify({ error: 'Missing or unknown tag and unable to resolve active region from puuid.' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
+        });
+      }
     }
-    const regional = tagToRegionalHost(tagParam);
-    targetHost = `${regional}.api.riotgames.com`;
+    targetHost = `${resolvedRegional}.api.riotgames.com`;
     url.searchParams.delete('tag');
   } else {
     // 其他都允许缺省 tag，但默认取 NA1

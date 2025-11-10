@@ -2,6 +2,7 @@
 import React from 'react';
 import type { AnalysisResult, ChampionData, MatchData, AggregatedSummary } from '../types';
 import type { MatchDto } from '../types/riotApiTypes';
+import { QUEUE_NAMES, RANKED_QUEUE_IDS, CASUAL_QUEUE_IDS, ALLOWED_QUEUE_IDS } from '../types/riotApiTypes';
 import { BrainCircuitIcon, CrosshairIcon, ShieldCheckIcon, SwordsIcon } from '../components/icons';
 import {
     getCachedPuuid,
@@ -50,8 +51,8 @@ async function getPuuid(gameName: string, tagLine: string): Promise<string> {
         return cached;
     }
     
-    // Pass the routing tagline so Worker can choose the nearest regional cluster
-    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}?tag=${encodeURIComponent(tagLine)}`);
+    // Do not pass tagLine as routing tag; proxy will default to americas for account lookups
+    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`);
     
     // Cache the result in all layers
     await setCachedPuuid(gameName, tagLine, data.puuid);
@@ -73,9 +74,8 @@ async function getMatchIds(puuid: string, tagLine: string): Promise<string[]> {
     const base = `${API_BASE_MATCH}/lol/match/v5/matches/by-puuid/${puuid}/ids`;
     const params = new URLSearchParams({
         start: '0',
-        count: '20',
+        count: '50',
         startTime: String(startOf2025Sec),
-        tag: tagLine,
     });
     
     const url = `${base}?${params.toString()}`;
@@ -99,7 +99,8 @@ async function getMatchDetails(matchId: string, tagLine: string): Promise<MatchD
     // Wait for rate limit availability
     await rateLimiter.waitForAvailability();
     
-    const matchDetails = await apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}?tag=${encodeURIComponent(tagLine)}`);
+    // Do not pass tagLine as routing tag; proxy will resolve via puuid-derived region when needed
+    const matchDetails = await apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}`);
     
     // Cache the result in all layers
     await setCachedMatchDetails(matchId, matchDetails);
@@ -133,32 +134,6 @@ export interface AggregatedStats {
     }>;
 }
 
-/**
- * Queue ID 映射表 - 只处理指定的 5 种队列类型
- */
-const QUEUE_NAMES: Record<number, string> = {
-    400: '5v5 Draft Pick games',
-    420: '5v5 Ranked Solo games',
-    430: '5v5 Blind Pick games',
-    440: '5v5 Ranked Flex games',
-    450: '5v5 ARAM games',
-    490: '5v5 quickplay',
-};
-
-/**
- * Ranked 队列 ID
- */
-const RANKED_QUEUE_IDS = [420, 440];
-
-/**
- * Casual 队列 ID
- */
-const CASUAL_QUEUE_IDS = [400, 430, 450,490];
-
-/**
- * 所有允许的队列 ID
- */
-const ALLOWED_QUEUE_IDS = [...RANKED_QUEUE_IDS, ...CASUAL_QUEUE_IDS];
 
 /**
  * 统一的 match 过滤逻辑
@@ -502,7 +477,6 @@ function generateAnalysis(
 ): AnalysisResult {
     // Extract match data for table display
     const matchData: MatchData[] = [];
-    const ALLOWED_QUEUE_IDS = [400, 420, 430, 440, 450];
     
     for (const match of matches) {
         if (!match.info || match.info.gameType !== "MATCHED_GAME") continue;
