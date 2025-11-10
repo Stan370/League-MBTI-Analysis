@@ -4,6 +4,7 @@ import { SwordsIcon } from './icons';
 
 interface LoadingScreenProps {
   summonerName: string;
+  onTimeout?: () => void;
 }
 
 const loadingSteps = [
@@ -15,7 +16,7 @@ const loadingSteps = [
   "Forging your legend...",
 ];
 
-const LoadingScreen: React.FC<LoadingScreenProps> = ({ summonerName }) => {
+const LoadingScreen: React.FC<LoadingScreenProps> = ({ summonerName, onTimeout }) => {
   const [currentStep, setCurrentStep] = useState(0);
 
   useEffect(() => {
@@ -25,6 +26,16 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ summonerName }) => {
 
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (onTimeout) {
+        onTimeout();
+      }
+    }, 20000); // 20 seconds timeout
+
+    return () => clearTimeout(timeout);
+  }, [onTimeout]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">

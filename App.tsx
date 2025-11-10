@@ -34,6 +34,11 @@ const App: React.FC = () => {
     }
   };
 
+  const handleTimeout = () => {
+    setError('Request timed out. Please try again.');
+    setView('landing');
+  };
+
   const handleReset = () => {
     setView('landing');
     setAnalysis(null);
@@ -44,9 +49,9 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (view) {
       case 'loading':
-        return <LoadingScreen summonerName={summonerName} />;
+        return <LoadingScreen summonerName={summonerName} onTimeout={handleTimeout} />;
       case 'results':
-        return analysis ? <ResultsPage analysis={analysis} onReset={handleReset} /> : <LoadingScreen summonerName={summonerName}/>;
+        return analysis ? <ResultsPage analysis={analysis} onReset={handleReset} /> : <LoadingScreen summonerName={summonerName} onTimeout={handleTimeout} />;
       case 'landing':
       default:
         return <LandingPage onAnalyze={handleAnalysis} error={error} />;

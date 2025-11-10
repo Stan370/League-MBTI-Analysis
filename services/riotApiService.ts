@@ -17,7 +17,7 @@ import pLimit from 'p-limit';
 import { rateLimiter } from './rateLimiter';
 
 // API requests are proxied through the Cloudflare Worker to keep the API key server-side
-const API_BASE_ACCOUNT = '/api/riot';
+const API_BASE_ACCOUNT = '/api';
 const API_BASE_MATCH = '/api/riot';
 const DDRAGON_VERSION = '14.15.1';
 
