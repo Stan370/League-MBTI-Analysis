@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { AnalysisResult, ChampionData, MatchData, AggregatedSummary } from '../types';
 import type { MatchDto } from '../types/riotApiTypes';

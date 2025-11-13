@@ -9,7 +9,7 @@
  */
 
 const DB_NAME = 'riot-api-cache';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORES = {
     PUUID: 'puuid',
     MATCH_IDS: 'matchIds',

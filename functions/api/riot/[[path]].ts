@@ -1,7 +1,6 @@
 function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' |''{
-  const t = tag.replace(/[^a-zA-Z0-9]/g, '')   // 去掉空格 / - / _
-  .toUpperCase();                 
-
+  const t = tag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();                 
+  console.log('tagToRegionalHost input tag:', tag, 'processed tag:', t);
   // americas group
   if (t.startsWith('NA') || t.startsWith('BR') || t.startsWith('LA') || t.startsWith('OC')) {
     return 'americas';
@@ -22,21 +21,16 @@ function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' 
 }
 
 // Helper function to extract region from match ID in path
-function extractRegionFromMatchId(pathname: string): string | null {
+function extractRegionFromMatchId(pathname: string): string {
   // Match endpoints with matchId (e.g., /lol/match/v5/matches/KR_680830235)
-  const matchIdMatch = pathname.match(/\/([A-Z]{2}_\d+)$/);
+  const matchIdMatch = pathname.match(/\/([A-Z]{2,3}\d?_\d+)$/);
   if (matchIdMatch && matchIdMatch[1]) {
     const matchId = matchIdMatch[1];
-    const regionPrefix = matchId.substring(0, 2);
+    // 提取下划线前的区域前缀
+    const regionPrefix = matchId.split('_')[0];
     return tagToRegionalHost(regionPrefix);
   }
-  return null;
-}
-
-function extractPuuidFromPath(pathname: string): string | null {
-  const byPuuidMatch = pathname.match(/\/by-puuid\/([^/?#]+)/i);
-  if (byPuuidMatch && byPuuidMatch[1]) return byPuuidMatch[1];
-  return null;
+  return '';
 }
 
 // CORS 白名单机制
@@ -70,6 +64,7 @@ export async function onRequest(context: {
     });
   }
 
+  
   const apiKey = env.RIOT_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ error: 'Missing RIOT_API_KEY' }), {
@@ -78,62 +73,41 @@ export async function onRequest(context: {
     });
   }
 
-  // For Pages Functions under functions/api/riot/[[path]].ts, strip the prefix '/api'
-  // Expected paths: /api/riot/account/... or /api/riot/lol/match/...
-  const originalPath = url.pathname.substring('/api'.length);
-  const tagParam = url.searchParams.get('tag') || '';
-  const isAccountEndpoint = originalPath.startsWith('/riot/account/') || originalPath.startsWith('/account/');
-  const isMatchEndpoint = originalPath.startsWith('/riot/lol/match/') || originalPath.startsWith('/lol/match/');
-  
-  // Check if this is a global account endpoint that doesn't need region lookup
-  // /riot/account/v1/accounts/by-riot-id/{gameName}/{tagLine} is a global endpoint served from americas
-  const isGlobalAccountEndpoint = originalPath.includes('/accounts/by-riot-id/');
-  const hasPuuidInPath = extractPuuidFromPath(originalPath) !== null;
-  const hasValidTag = tagParam && tagToRegionalHost(tagParam) !== '';
-  
-  // Simplified logic: we need regional lookup when we have a puuid but lack region info
-  // Global account endpoints don't need lookup as they're accessible from any region
-  // Match endpoints might get region from tag param or match ID
-  const needsRegionalLookup = hasPuuidInPath && 
-                              !isGlobalAccountEndpoint && 
-                              !hasValidTag &&
-                              !extractRegionFromMatchId(originalPath);
+  // For Pages Functions under functions/api/riot/[[path]].ts, strip the prefix '/api/riot'
+  const originalPath = url.pathname.substring('/api/riot'.length);
+  console.log('originalPath', originalPath);
+  const isAccountEndpoint = originalPath.includes('by-riot-id');
+  const match = originalPath.match(/by-riot-id\/([^/]+)\/([^/]+)/);
+  let tagLine = ''
+  if (match) {
+    const gameName = match[1];
+    tagLine = match[2];
+  }
+  const regionalHost = tagToRegionalHost(tagLine) 
+  || extractRegionFromMatchId(originalPath)
+  || "asia";
+  // Extract puuid from match endpoints for region lookup
+  let puuid = '';
+  const puuidMatch = originalPath.match(/by-puuid\/([^/]+)/);
+  if (puuidMatch) {
+    puuid = puuidMatch[1];
+  }
+  const needsRegionalLookup = regionalHost === '' && puuid !== '' && !extractRegionFromMatchId(originalPath);
   
   let targetHost = '';
-  let finalPath = originalPath;
-  
   if (needsRegionalLookup) {
-    const puuid = extractPuuidFromPath(originalPath);
-    
-    // Validate required parameters for region lookup
-    if (!puuid) {
-      return new Response(JSON.stringify({ 
-        error: 'Missing puuid', 
-        details: 'Could not extract puuid from path. Path should contain /by-puuid/{puuid}. For match endpoints with matchId, provide ?tag=REGION parameter.' 
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
-      });
-    }
-    
-    try {
-      // This endpoint is served from a regional cluster; asia hosts account for global queries reliably
-      // API key MUST be in headers as X-Riot-Token, NOT in query string
-      const regionLookupUrl = `https://asia.api.riotgames.com/riot/account/v1/region/by-game/lol/by-puuid/${encodeURIComponent(puuid)}`;
-      const lookupResp = await fetch(regionLookupUrl, { 
-        headers: { 
-          'X-Riot-Token': apiKey 
-        } 
-      });
-      
-      if (lookupResp.ok) {
-        const regionDto: { puuid: string; game: string; region: 'americas' | 'europe' | 'asia' | 'sea' } = await lookupResp.json();
-        if (regionDto && regionDto.region) {
-          // regionDto.region is already one of the regional host keys
+    try{
+        const regionLookupUrl = `https://asia.api.riotgames.com/riot/account/v1/region/by-game/lol/by-puuid/${encodeURIComponent(puuid)}`;
+        const lookupResp = await fetch(regionLookupUrl, { 
+          headers: { 
+            'X-Riot-Token': apiKey 
+          } 
+        });
+        if (lookupResp.ok) {
+          const regionDto: { puuid: string; game: string; region: string } = await lookupResp.json();
           targetHost = `${tagToRegionalHost(regionDto.region)}.api.riotgames.com`;
-          url.searchParams.delete('tag');
         } else {
-          console.warn('[Functions] Region lookup response missing region field', { regionDto, originalPath });
+          console.warn('[Functions] Region lookup response missing region field', { status: lookupResp.status, originalPath });
           return new Response(JSON.stringify({ 
             error: 'Region lookup failed', 
             details: 'Region lookup response did not contain a valid region field. Please check the puuid or provide a ?tag parameter.' 
@@ -142,129 +116,16 @@ export async function onRequest(context: {
             headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
           });
         }
-      } else {
-        const errorText = await lookupResp.text().catch(() => 'Unknown error');
-        console.error('[Functions] Failed to resolve active region', { 
-          status: lookupResp.status, 
-          statusText: lookupResp.statusText,
-          error: errorText,
-          url: regionLookupUrl,
-          originalPath 
-        });
-        return new Response(JSON.stringify({ 
-          error: 'Region lookup failed', 
-          details: `Failed to resolve region for puuid. Status: ${lookupResp.status}. ${errorText}` 
-        }), {
-          status: lookupResp.status >= 500 ? 502 : lookupResp.status,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
-        });
-      }
-    } catch (e) {
-      console.error('[Functions] Error resolving active region', { 
-        error: e instanceof Error ? e.message : 'Unknown',
-        originalPath 
-      });
-      return new Response(JSON.stringify({ 
-        error: 'Region lookup error', 
-        details: `Error during region lookup: ${e instanceof Error ? e.message : 'Unknown error'}` 
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
-      });
+    }catch (e) {
+      console.error('[Functions] Region lookup error', { error: e instanceof Error ? e.message : 'Unknown', originalPath }); 
     }
-  } else {
-    // Handle cases where we don't need region lookup
-    // 1. Global account endpoints (by-riot-id) use americas region
-    if (isGlobalAccountEndpoint) {
-      targetHost = 'americas.api.riotgames.com';
-    }
-    // 2. Use tag parameter to determine region
-    else if (tagParam) {
-      const regional = tagToRegionalHost(tagParam);
-      if (regional) {
-        targetHost = `${regional}.api.riotgames.com`;
-        url.searchParams.delete('tag');
-      } else {
-        // Invalid tag, but we'll try to proceed with matchId extraction
-        console.warn('[Functions] Invalid tag parameter, attempting to extract region from matchId', { tagParam, originalPath });
-      }
-    }
-    // 3. For match endpoints with matchId (e.g., /lol/match/v5/matches/KR_680830235)
-    // Try to extract region from matchId if no tag provided
-    if (!targetHost && isMatchEndpoint) {
-      const regionFromMatchId = extractRegionFromMatchId(originalPath);
-      if (regionFromMatchId) {
-        targetHost = `${regionFromMatchId}.api.riotgames.com`;
-      }
-    }
-    
-    // 4. For account endpoints without puuid and without global endpoint flag, use americas as default
-    if (!targetHost && isAccountEndpoint && !hasPuuidInPath) {
-      targetHost = 'americas.api.riotgames.com';
-    }
-    
-    // If still no host determined, return error
-    if (!targetHost) {
-      return new Response(JSON.stringify({ 
-        error: 'Missing region information', 
-        details: 'Could not determine regional host. Please provide ?tag=REGION parameter (e.g., ?tag=KR, ?tag=NA1) or ensure the path contains a puuid for automatic region lookup.' 
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
-      });
-    }
-  }
-  
-  // Ensure path is in the correct format for Riot API
-  // Account endpoints: /riot/account/v1/... (e.g., /riot/account/v1/accounts/by-riot-id/...)
-  // Match endpoints: /lol/match/v5/... (e.g., /lol/match/v5/matches/by-puuid/... or /lol/match/v5/matches/KR_...)
-  if (isAccountEndpoint) {
-    // Account endpoints should have /riot/ prefix
-    // If path is /riot/account/..., use as is
-    // If path is /account/..., add /riot prefix
-    if (originalPath.startsWith('/riot/account/')) {
-      finalPath = originalPath;
-    } else if (originalPath.startsWith('/account/')) {
-      finalPath = `/riot${originalPath}`;
-    } else {
-      finalPath = originalPath.startsWith('/') ? `/riot${originalPath}` : `/riot/${originalPath}`;
-    }
-  } else if (isMatchEndpoint) {
-    // Match endpoints should have /lol/match/ prefix (NOT /riot/lol/match/)
-    // Remove /riot prefix if present: /riot/lol/match/... -> /lol/match/...
-    if (originalPath.startsWith('/riot/lol/match/')) {
-      finalPath = originalPath.substring('/riot'.length); // Remove /riot prefix
-    } else if (originalPath.startsWith('/lol/match/')) {
-      finalPath = originalPath; // Already correct
-    } else {
-      // Fallback: try to construct correct path
-      finalPath = originalPath.startsWith('/') ? originalPath : `/${originalPath}`;
-      if (!finalPath.startsWith('/lol/')) {
-        finalPath = `/lol${finalPath}`;
-      }
-    }
-  } else {
-    // For other paths, use as is (might be other Riot API endpoints)
-    finalPath = originalPath;
-  }
-  
-  // At this point, targetHost should be set (either from region lookup or tag/matchId)
-  // If not, it means there was an error in the logic above, which should have returned an error response
-  if (!targetHost) {
-    console.error('[Functions] Unexpected: targetHost is empty after all processing', { originalPath, isAccountEndpoint, isMatchEndpoint, hasPuuidInPath, tagParam });
-    return new Response(JSON.stringify({ 
-      error: 'Internal error', 
-      details: 'Failed to determine target region. This should not happen. Please check the request path and parameters.' 
-    }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
-    });
+  }else{
+    targetHost = `${regionalHost}.api.riotgames.com`;
   }
 
   //这是代理服务器的核心：接收前端请求 → 转发到 Riot API → 拿到结果 → 返回给前端。整个过程隐藏了 API 密钥，并解决了跨域问题。
-  const targetUrl = `https://${targetHost}${finalPath}${url.search}`;
+  const targetUrl = `https://${targetHost}${originalPath}${url.search}`;
   console.log('targetURL', targetUrl);
-  console.log('[Functions] Target URL:', targetUrl, '| Original path:', originalPath, '| Final path:', finalPath);
   const init: RequestInit = {
     method: request.method,
     headers: { 'X-Riot-Token': apiKey },
