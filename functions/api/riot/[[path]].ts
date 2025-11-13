@@ -21,6 +21,18 @@ function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' 
   return '';
 }
 
+// Helper function to extract region from match ID in path
+function extractRegionFromMatchId(pathname: string): string | null {
+  // Match endpoints with matchId (e.g., /lol/match/v5/matches/KR_680830235)
+  const matchIdMatch = pathname.match(/\/([A-Z]{2}_\d+)$/);
+  if (matchIdMatch && matchIdMatch[1]) {
+    const matchId = matchIdMatch[1];
+    const regionPrefix = matchId.substring(0, 2);
+    return tagToRegionalHost(regionPrefix);
+  }
+  return null;
+}
+
 function extractPuuidFromPath(pathname: string): string | null {
   const byPuuidMatch = pathname.match(/\/by-puuid\/([^/?#]+)/i);
   if (byPuuidMatch && byPuuidMatch[1]) return byPuuidMatch[1];
@@ -69,14 +81,7 @@ export async function onRequest(context: {
   // For Pages Functions under functions/api/riot/[[path]].ts, strip the prefix '/api'
   // Expected paths: /api/riot/account/... or /api/riot/lol/match/...
   const originalPath = url.pathname.substring('/api'.length);
-  
-  // Normalize path: ensure it starts with /riot/ or /lol/
-  // If path is /riot/account/... or /riot/lol/match/..., use as is
-  // If path is /lol/match/..., it's already correct for match endpoints
-  
   const tagParam = url.searchParams.get('tag') || '';
-
-  // Determine if this is an account endpoint or match endpoint that needs regional lookup
   const isAccountEndpoint = originalPath.startsWith('/riot/account/') || originalPath.startsWith('/account/');
   const isMatchEndpoint = originalPath.startsWith('/riot/lol/match/') || originalPath.startsWith('/lol/match/');
   
@@ -86,8 +91,13 @@ export async function onRequest(context: {
   const hasPuuidInPath = extractPuuidFromPath(originalPath) !== null;
   const hasValidTag = tagParam && tagToRegionalHost(tagParam) !== '';
   
-  const needsRegionalLookup = (isAccountEndpoint && hasPuuidInPath && !isGlobalAccountEndpoint) || 
-                               (isMatchEndpoint && hasPuuidInPath && !hasValidTag);
+  // Simplified logic: we need regional lookup when we have a puuid but lack region info
+  // Global account endpoints don't need lookup as they're accessible from any region
+  // Match endpoints might get region from tag param or match ID
+  const needsRegionalLookup = hasPuuidInPath && 
+                              !isGlobalAccountEndpoint && 
+                              !hasValidTag &&
+                              !extractRegionFromMatchId(originalPath);
   
   let targetHost = '';
   let finalPath = originalPath;
@@ -182,14 +192,9 @@ export async function onRequest(context: {
     // 3. For match endpoints with matchId (e.g., /lol/match/v5/matches/KR_680830235)
     // Try to extract region from matchId if no tag provided
     if (!targetHost && isMatchEndpoint) {
-      const matchIdMatch = originalPath.match(/\/([A-Z]{2}_\d+)$/);
-      if (matchIdMatch && matchIdMatch[1]) {
-        const matchId = matchIdMatch[1];
-        const regionPrefix = matchId.substring(0, 2);
-        const regional = tagToRegionalHost(regionPrefix);
-        if (regional) {
-          targetHost = `${regional}.api.riotgames.com`;
-        }
+      const regionFromMatchId = extractRegionFromMatchId(originalPath);
+      if (regionFromMatchId) {
+        targetHost = `${regionFromMatchId}.api.riotgames.com`;
       }
     }
     
@@ -255,6 +260,8 @@ export async function onRequest(context: {
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
     });
   }
+
+  //这是代理服务器的核心：接收前端请求 → 转发到 Riot API → 拿到结果 → 返回给前端。整个过程隐藏了 API 密钥，并解决了跨域问题。
   const targetUrl = `https://${targetHost}${finalPath}${url.search}`;
   console.log('targetURL', targetUrl);
   console.log('[Functions] Target URL:', targetUrl, '| Original path:', originalPath, '| Final path:', finalPath);
