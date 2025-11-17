@@ -86,7 +86,7 @@ AWS API Gateway (/api/ai/generate-insights)
 AWS Lambda Function (Node.js/TypeScript)
     ├→ Check DynamoDB Cache
     ├→ If cache miss: Call AWS Bedrock Runtime API
-    ├→ Parse JSON response
+    ├→ Parse JSON response 
     └→ Store in DynamoDB (24h TTL)
     ↓
 Return AI Insights (playstyle, strengths, prediction)

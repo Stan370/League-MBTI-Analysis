@@ -31,21 +31,12 @@ export function clearCache(): Promise<void> {
 }
 
 // --- HELPER: API FETCHING ---
-async function apiFetch<T>(url: string, gameName?: string, tagLine?: string): Promise<T> {
-    // If we have gameName and tagLine, try to add cached region as a query parameter
-    let finalUrl = url;
-    if (gameName && tagLine) {
-        const cachedRegion = await getCachedRegion(gameName, tagLine);
-        if (cachedRegion) {
-            const separator = url.includes('?') ? '&' : '?';
-            finalUrl = `${url}${separator}_region=${cachedRegion}`;
-        }
-    }
-    
-    const response = await fetch(finalUrl);
+async function apiFetch<T>(url: string, gameName?: string, tagLine?: string, isAccountEndpoint?: boolean): Promise<T> {
+    const response = await fetch(url);
     
     // Extract region from response header and cache it
-    if (gameName && tagLine && response.ok) {
+    // ONLY cache region for account endpoints (by-riot-id), not for match endpoints
+    if (gameName && tagLine && response.ok && isAccountEndpoint) {
         const regionFromResponse = response.headers.get('X-Region-Used');
         if (regionFromResponse && regionFromResponse !== '') {
             const validRegions = ['americas', 'europe', 'asia', 'sea'];
@@ -76,7 +67,7 @@ async function getPuuid(gameName: string, tagLine: string): Promise<string> {
     }
     
     // Do not pass tagLine as routing tag; proxy will default to americas for account lookups
-    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`, gameName, tagLine);
+    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`, gameName, tagLine, true);
     
     // Cache the result in all layers
     await setCachedPuuid(gameName, tagLine, data.puuid);

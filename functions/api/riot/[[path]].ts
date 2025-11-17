@@ -1,7 +1,6 @@
 function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' | '' {
-  if (!tag) return null;
+  if (!tag) return '';
   const t = tag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();                 
-  console.log('[tagToRegionalHost] input:', tag, 'processed:', t);
   if (t.startsWith('BR') || t.startsWith('LA') || t.startsWith('NA') || t.startsWith('OC')) {
     return 'americas';
   }
@@ -17,13 +16,12 @@ function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' 
   if (t.startsWith('PBE')) {
     return 'americas';
   }
-  console.log('[tagToRegionalHost] No match for tag:', tag, '- returning null');
+  console.log('[tagToRegionalHost] No match for tag:', tag, '- returning empty string');
   return '';
 }
 
 // Helper function to extract region from match ID in path
 function extractRegionFromMatchId(pathname: string): string {
-  // Match endpoints with matchId (e.g., /lol/match/v5/matches/KR_680830235)
   const matchIdMatch = pathname.match(/\/([A-Z]{2,3}\d?_\d+)$/);
   if (matchIdMatch && matchIdMatch[1]) {
     const matchId = matchIdMatch[1];
@@ -89,74 +87,86 @@ export async function onRequest(context: {
 // extract gameName/tagLine from path
 const match = originalPath.match(/by-riot-id\/([^/]+)\/([^/]+)/);
 let tagLine = '';
+const isAccountByRiotIdEndpoint = !!match;
 if (match) {
   const gameName = match[1];
   tagLine = match[2];
-  regionalHost = extractRegionFromMatchId(originalPath);
 }
 
 let needsRegionalLookup: boolean = false;
 let puuid = '';
 const regionParam = url.searchParams.get('_region');
 
-// 1. region explicitly provided and valid
+// Priority 1: Explicit region parameter
 if (regionParam && ['americas', 'europe', 'asia', 'sea'].includes(regionParam)) {
+  console.log('[onRequest] Using explicit _region param:', regionParam);
   regionalHost = regionParam as 'americas' | 'europe' | 'asia' | 'sea';
 }
-else if (tagToRegionalHost(tagLine).length!==0) {
-  regionalHost = tagToRegionalHost(tagLine);
+// Priority 2: Extract region from Match ID (e.g., EUW1_7604740916 -> europe)
+else if (originalPath.includes('/lol/match/') && originalPath.includes('/matches/')) {
+  const matchIdRegion = extractRegionFromMatchId(originalPath);
+  if (matchIdRegion) {
+    console.log('[onRequest] Extracted region from Match ID:', matchIdRegion);
+    regionalHost = matchIdRegion;
+  } else {
+    console.log('[onRequest] Could not extract region from Match ID, using default fallback');
+    regionalHost = 'asia';
+  }
 }
-else {
-  needsRegionalLookup = true;
+// Priority 3: For by-riot-id endpoints, resolve from tagLine
+else if (isAccountByRiotIdEndpoint && tagLine && tagToRegionalHost(tagLine) !== '') {
+  const resolvedRegion = tagToRegionalHost(tagLine);
+  console.log('[onRequest] Resolved region from tagLine:', resolvedRegion);
+  regionalHost = resolvedRegion;
 }
-
-  // Extract puuid from match endpoints for region lookup
+// Priority 4: For by-puuid endpoints, need region lookup
+else if (originalPath.includes('/by-puuid/')) {
+  console.log('[onRequest] by-puuid endpoint, need region lookup');
   const puuidMatch = originalPath.match(/by-puuid\/([^/]+)/);
   if (puuidMatch) {
     puuid = puuidMatch[1];
   }
-  
+  needsRegionalLookup = true;
+}
+// Default fallback
+else {
+  console.log('[onRequest] Could not resolve region, using default fallback');
+  regionalHost = 'asia';
+}
   let targetHost = '';
-  if (needsRegionalLookup) {
-    try{
-        const regionLookupUrl = `https://asia.api.riotgames.com/riot/account/v1/region/by-game/lol/by-puuid/${encodeURIComponent(puuid)}`;
-        const lookupResp = await fetch(regionLookupUrl, { 
-          headers: { 
-            'X-Riot-Token': apiKey 
-          } 
-        });
-        if (lookupResp.ok) {
-          const regionDto: { puuid: string; game: string; region: string } = await lookupResp.json();
-          targetHost = `${tagToRegionalHost(regionDto.region)}.api.riotgames.com`;
-        } else {
-          console.warn('[Functions] Region lookup response missing region field', { status: lookupResp.status, originalPath });
-          return new Response(JSON.stringify({ 
-            error: 'Region lookup failed', 
-            details: 'Region lookup response did not contain a valid region field. Please check the puuid or provide a ?tag parameter.' 
-          }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin }
-          });
-        }
-    }catch (e) {
-      console.error('[Functions] Region lookup error', { error: e instanceof Error ? e.message : 'Unknown', originalPath }); 
+  // Only do region lookup if we have a valid puuid and need it
+  if (needsRegionalLookup && puuid !== '') {
+    try {
+      console.log('[onRequest] Starting region lookup with puuid:', puuid);
+      const regionLookupUrl = `https://asia.api.riotgames.com/riot/account/v1/region/by-game/lol/by-puuid/${encodeURIComponent(puuid)}`;
+      const lookupResp = await fetch(regionLookupUrl, { 
+        headers: { 
+          'X-Riot-Token': apiKey 
+        } 
+      });
+      if (lookupResp.ok) {
+        const regionDto: { puuid: string; game: string; region: string } = await lookupResp.json();
+        console.log('[onRequest] Region lookup result:', regionDto);
+        const resolvedRegion = tagToRegionalHost(regionDto.region);
+        regionalHost = resolvedRegion;
+      } else {
+        console.warn('[Functions] Region lookup failed', { status: lookupResp.status, originalPath });
+        // Fall back to default
+        regionalHost = 'asia';
+      }
+    } catch (e) {
+      console.error('[Functions] Region lookup error', { error: e instanceof Error ? e.message : 'Unknown', originalPath });
+      // Fall back to default
+      regionalHost = 'asia';
     }
-  }else{
-    targetHost = `${regionalHost}.api.riotgames.com`;
   }
+  
+  targetHost = `${regionalHost}.api.riotgames.com`;
 
   //这是代理服务器的核心：接收前端请求 → 转发到 Riot API → 拿到结果 → 返回给前端。整个过程隐藏了 API 密钥，并解决了跨域问题。
   const targetUrl = `https://${targetHost}${originalPath}${url.search}`;
-  console.log('[Functions] Request details', {
-    originalPath,
-    tagLine,
-    regionalHost,
-    targetHost,
-    targetUrl,
-    isAccountEndpoint,
-    needsRegionalLookup,
-    puuid: puuid ? `${puuid.substring(0, 8)}...` : 'none',
-  });
+  console.log('targetURL', targetUrl);
+
   const init: RequestInit = {
     method: request.method,
     headers: { 'X-Riot-Token': apiKey },
@@ -206,5 +216,3 @@ else {
     );
   }
 }
-
-
