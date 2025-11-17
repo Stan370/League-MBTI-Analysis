@@ -1,22 +1,23 @@
-function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' |''{
+function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' | '' {
+  if (!tag) return null;
   const t = tag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();                 
-  console.log('tagToRegionalHost input tag:', tag, 'processed tag:', t);
-  // americas group
-  if (t.startsWith('NA') || t.startsWith('BR') || t.startsWith('LA') || t.startsWith('OC')) {
+  console.log('[tagToRegionalHost] input:', tag, 'processed:', t);
+  if (t.startsWith('BR') || t.startsWith('LA') || t.startsWith('NA') || t.startsWith('OC')) {
     return 'americas';
   }
-  // europe group
-  if (t.startsWith('EU') || t.startsWith('TR') || t.startsWith('RU')) {
+  if ( t.startsWith('EU') || t.startsWith('TR') || t.startsWith('RU')) {
     return 'europe';
   }
-  // asia group
   if (t.startsWith('KR') || t.startsWith('JP')) {
     return 'asia';
   }
-  // sea group
-  if (['PH2','SG2','TH2','TW2','VN2'].includes(t)) {
+  if (t.startsWith('PH') || t.startsWith('SG') || t.startsWith('TH') || t.startsWith('TW') || t.startsWith('VN')) {
     return 'sea';
   }
+  if (t.startsWith('PBE')) {
+    return 'americas';
+  }
+  console.log('[tagToRegionalHost] No match for tag:', tag, '- returning null');
   return '';
 }
 
@@ -74,25 +75,46 @@ export async function onRequest(context: {
   }
 
   // For Pages Functions under functions/api/riot/[[path]].ts, strip the prefix '/api/riot'
-  const originalPath = url.pathname.substring('/api/riot'.length);
-  console.log('originalPath', originalPath);
-  const isAccountEndpoint = originalPath.includes('by-riot-id');
-  const match = originalPath.match(/by-riot-id\/([^/]+)\/([^/]+)/);
-  let tagLine = ''
-  if (match) {
-    const gameName = match[1];
-    tagLine = match[2];
+  const isAccountEndpoint = url.pathname.includes('by-riot-id');
+
+ let originalPath;
+  if (isAccountEndpoint) {
+    originalPath = url.pathname.substring('/api'.length);
+  } else {
+    originalPath = url.pathname.substring('/api/riot'.length);
   }
-  const regionalHost = tagToRegionalHost(tagLine) 
-  || extractRegionFromMatchId(originalPath)
-  || "asia";
+
+  let regionalHost: 'americas' | 'europe' | 'asia' | 'sea' | any;
+
+// extract gameName/tagLine from path
+const match = originalPath.match(/by-riot-id\/([^/]+)\/([^/]+)/);
+let tagLine = '';
+if (match) {
+  const gameName = match[1];
+  tagLine = match[2];
+  regionalHost = extractRegionFromMatchId(originalPath);
+}
+
+let needsRegionalLookup: boolean = false;
+let puuid = '';
+const regionParam = url.searchParams.get('_region');
+
+// 1. region explicitly provided and valid
+if (regionParam && ['americas', 'europe', 'asia', 'sea'].includes(regionParam)) {
+  regionalHost = regionParam as 'americas' | 'europe' | 'asia' | 'sea';
+}
+else if (tagToRegionalHost(tagLine).length!==0) {
+  regionalHost = tagToRegionalHost(tagLine);
+}
+else {
+  needsRegionalLookup = true;
+}
+
   // Extract puuid from match endpoints for region lookup
-  let puuid = '';
   const puuidMatch = originalPath.match(/by-puuid\/([^/]+)/);
   if (puuidMatch) {
     puuid = puuidMatch[1];
   }
-  const needsRegionalLookup = regionalHost === '' && puuid !== '' && !extractRegionFromMatchId(originalPath);
   
   let targetHost = '';
   if (needsRegionalLookup) {
@@ -125,7 +147,16 @@ export async function onRequest(context: {
 
   //这是代理服务器的核心：接收前端请求 → 转发到 Riot API → 拿到结果 → 返回给前端。整个过程隐藏了 API 密钥，并解决了跨域问题。
   const targetUrl = `https://${targetHost}${originalPath}${url.search}`;
-  console.log('targetURL', targetUrl);
+  console.log('[Functions] Request details', {
+    originalPath,
+    tagLine,
+    regionalHost,
+    targetHost,
+    targetUrl,
+    isAccountEndpoint,
+    needsRegionalLookup,
+    puuid: puuid ? `${puuid.substring(0, 8)}...` : 'none',
+  });
   const init: RequestInit = {
     method: request.method,
     headers: { 'X-Riot-Token': apiKey },
@@ -133,7 +164,6 @@ export async function onRequest(context: {
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     init.body = await request.arrayBuffer();
   }
-  console.log('targetHost', targetHost);
 
   try {
     const upstream = await fetch(targetUrl, init);
@@ -154,10 +184,15 @@ export async function onRequest(context: {
     }
     const response = new Response(upstream.body, upstream);
     response.headers.set('Access-Control-Allow-Origin', corsOrigin);
+    
+    // Add X-Region-Used header so client can cache it
+    response.headers.set('X-Region-Used', regionalHost);
+    
     console.log('[Functions] /api/riot', {
       status: upstream.status,
       durationMs,
       targetUrl,
+      regionUsed: regionalHost,
     });
     return response;
   } catch (e) {

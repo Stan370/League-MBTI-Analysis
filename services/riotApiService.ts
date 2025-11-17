@@ -10,6 +10,8 @@ import {
     setCachedMatchIds,
     getCachedMatchDetails,
     setCachedMatchDetails,
+    getCachedRegion,
+    setCachedRegion,
     clearAllCaches,
 } from './cacheService';
 import pLimit from 'p-limit';
@@ -29,8 +31,31 @@ export function clearCache(): Promise<void> {
 }
 
 // --- HELPER: API FETCHING ---
-async function apiFetch<T>(url: string): Promise<T> {
-    const response = await fetch(url);
+async function apiFetch<T>(url: string, gameName?: string, tagLine?: string): Promise<T> {
+    // If we have gameName and tagLine, try to add cached region as a query parameter
+    let finalUrl = url;
+    if (gameName && tagLine) {
+        const cachedRegion = await getCachedRegion(gameName, tagLine);
+        if (cachedRegion) {
+            const separator = url.includes('?') ? '&' : '?';
+            finalUrl = `${url}${separator}_region=${cachedRegion}`;
+        }
+    }
+    
+    const response = await fetch(finalUrl);
+    
+    // Extract region from response header and cache it
+    if (gameName && tagLine && response.ok) {
+        const regionFromResponse = response.headers.get('X-Region-Used');
+        if (regionFromResponse && regionFromResponse !== '') {
+            const validRegions = ['americas', 'europe', 'asia', 'sea'];
+            if (validRegions.includes(regionFromResponse)) {
+                await setCachedRegion(gameName, tagLine, regionFromResponse as 'americas' | 'europe' | 'asia' | 'sea');
+                console.log(`[apiFetch] Cached region ${regionFromResponse} for ${gameName}#${tagLine}`);
+            }
+        }
+    }
+    
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         if (response.status === 403) throw new Error("Forbidden: Check your Riot API key.");
@@ -51,7 +76,7 @@ async function getPuuid(gameName: string, tagLine: string): Promise<string> {
     }
     
     // Do not pass tagLine as routing tag; proxy will default to americas for account lookups
-    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`);
+    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`, gameName, tagLine);
     
     // Cache the result in all layers
     await setCachedPuuid(gameName, tagLine, data.puuid);
@@ -60,7 +85,7 @@ async function getPuuid(gameName: string, tagLine: string): Promise<string> {
     return data.puuid;
 }
 
-async function getMatchIds(puuid: string, tagLine: string): Promise<string[]> {
+async function getMatchIds(puuid: string, gameName: string, tagLine: string): Promise<string[]> {
     // Check multi-layer cache first (不再按 queueId 缓存)
     const cached = await getCachedMatchIds(puuid, undefined);
     if (cached) {
@@ -79,7 +104,7 @@ async function getMatchIds(puuid: string, tagLine: string): Promise<string[]> {
     
     const url = `${base}?${params.toString()}`;
     console.log('[getMatchIds] params', Object.fromEntries(params.entries()));
-    const matchIds = await apiFetch<string[]>(url);
+    const matchIds = await apiFetch<string[]>(url, gameName, tagLine);
     
     // Cache the result in all layers
     await setCachedMatchIds(puuid, undefined, matchIds);
@@ -88,7 +113,7 @@ async function getMatchIds(puuid: string, tagLine: string): Promise<string[]> {
     return matchIds;
 }
 
-async function getMatchDetails(matchId: string, tagLine: string): Promise<MatchDto> {
+async function getMatchDetails(matchId: string, gameName: string, tagLine: string): Promise<MatchDto> {
     // Check multi-layer cache first (matchId is globally unique)
     const cached = await getCachedMatchDetails<MatchDto>(matchId);
     if (cached) {
@@ -99,7 +124,7 @@ async function getMatchDetails(matchId: string, tagLine: string): Promise<MatchD
     await rateLimiter.waitForAvailability();
     
     // Do not pass tagLine as routing tag; proxy will resolve via puuid-derived region when needed
-    const matchDetails = await apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}`);
+    const matchDetails = await apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}`, gameName, tagLine);
     
     // Cache the result in all layers
     await setCachedMatchDetails(matchId, matchDetails);
@@ -261,6 +286,7 @@ function processSingleMatch(
  */
 async function fetchMatches(
     matchIds: string[],
+    gameName: string,
     tagLine: string
 ): Promise<{ matches: MatchDto[]; errors: number }> {
     console.log(`[fetchMatches] Starting to fetch ${matchIds.length} matches`);
@@ -273,7 +299,7 @@ async function fetchMatches(
     const matchPromises = matchIds.map((matchId, index) => 
         limit(async () => {
             try {
-                const match = await getMatchDetails(matchId, tagLine);
+                const match = await getMatchDetails(matchId, gameName, tagLine);
                 if ((index + 1) % 10 === 0) {
                     const status = rateLimiter.getStatus();
                     console.log(`[fetchMatches] Progress: ${index + 1}/${matchIds.length} | Rate limit: ${status.short.count}/${status.short.limit} (short), ${status.long.count}/${status.long.limit} (long)`);
@@ -421,11 +447,12 @@ function aggregateMatches(
  */
 async function fetchFilterAndAggregateMatches(
     matchIds: string[],
+    gameName: string,
     tagLine: string,
     puuid: string
 ): Promise<{ stats: AggregatedStats; matches: MatchDto[]; skipStats: { [key: string]: number } }> {
     // Layer 1: Fetch - 只负责获取数据，不涉及业务逻辑
-    const { matches: allMatches, errors } = await fetchMatches(matchIds, tagLine);
+    const { matches: allMatches, errors } = await fetchMatches(matchIds, gameName, tagLine);
     
     // Layer 2: Filter - 只负责过滤，不涉及聚合
     const { validMatches, skipStats } = filterMatches(allMatches, puuid);
@@ -629,7 +656,7 @@ export const analyzePlayer = async (
     console.log('[analyzePlayer] Resolved PUUID:', puuid, 'for', summonerNameWithTag);
 
     // 获取所有匹配
-    const matchIds = await getMatchIds(puuid, tagLine);
+    const matchIds = await getMatchIds(puuid, gameName, tagLine);
     console.log('[analyzePlayer] Found match IDs:', matchIds.length, matchIds);
     
     if (matchIds.length === 0) {
@@ -639,6 +666,7 @@ export const analyzePlayer = async (
     // 三层架构：fetch -> filter -> aggregate（完全解耦）
     const { stats: aggregatedStats, matches, skipStats } = await fetchFilterAndAggregateMatches(
         matchIds,
+        gameName,
         tagLine,
         puuid
     );
