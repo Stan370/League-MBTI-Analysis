@@ -1,10 +1,10 @@
 function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' | '' {
   if (!tag) return '';
-  const t = tag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();                 
+  const t = tag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   if (t.startsWith('BR') || t.startsWith('LA') || t.startsWith('NA') || t.startsWith('OC')) {
     return 'americas';
   }
-  if ( t.startsWith('EU') || t.startsWith('TR') || t.startsWith('RU')) {
+  if (t.startsWith('EU') || t.startsWith('TR') || t.startsWith('RU')) {
     return 'europe';
   }
   if (t.startsWith('KR') || t.startsWith('JP')) {
@@ -63,7 +63,7 @@ export async function onRequest(context: {
     });
   }
 
-  
+
   const apiKey = env.RIOT_API_KEY;
   if (!apiKey) {
     return new Response(JSON.stringify({ error: 'Missing RIOT_API_KEY' }), {
@@ -75,7 +75,7 @@ export async function onRequest(context: {
   // For Pages Functions under functions/api/riot/[[path]].ts, strip the prefix '/api/riot'
   const isAccountEndpoint = url.pathname.includes('by-riot-id');
 
- let originalPath;
+  let originalPath;
   if (isAccountEndpoint) {
     originalPath = url.pathname.substring('/api'.length);
   } else {
@@ -84,65 +84,53 @@ export async function onRequest(context: {
 
   let regionalHost: 'americas' | 'europe' | 'asia' | 'sea' | any;
 
-// extract gameName/tagLine from path
-const match = originalPath.match(/by-riot-id\/([^/]+)\/([^/]+)/);
-let tagLine = '';
-const isAccountByRiotIdEndpoint = !!match;
-if (match) {
-  const gameName = match[1];
-  tagLine = match[2];
-}
-
-let needsRegionalLookup: boolean = false;
-let puuid = '';
-const regionParam = url.searchParams.get('_region');
-
-// Priority 1: Explicit region parameter
-if (regionParam && ['americas', 'europe', 'asia', 'sea'].includes(regionParam)) {
-  console.log('[onRequest] Using explicit _region param:', regionParam);
-  regionalHost = regionParam as 'americas' | 'europe' | 'asia' | 'sea';
-}
-// Priority 2: Extract region from Match ID (e.g., EUW1_7604740916 -> europe)
-else if (originalPath.includes('/lol/match/') && originalPath.includes('/matches/')) {
-  const matchIdRegion = extractRegionFromMatchId(originalPath);
-  if (matchIdRegion) {
-    console.log('[onRequest] Extracted region from Match ID:', matchIdRegion);
-    regionalHost = matchIdRegion;
-  } else {
-    console.log('[onRequest] Could not extract region from Match ID, using default fallback');
-    regionalHost = 'asia';
+  // extract gameName/tagLine from path
+  const match = originalPath.match(/by-riot-id\/([^/]+)\/([^/]+)/);
+  let tagLine = '';
+  if (match) {
+    console.log("matched by-riot-id endpoint",match)
+    const gameName = match[1];
+    tagLine = match[2];
   }
-}
-// Priority 3: For by-riot-id endpoints, resolve from tagLine
-else if (isAccountByRiotIdEndpoint && tagLine && tagToRegionalHost(tagLine) !== '') {
-  const resolvedRegion = tagToRegionalHost(tagLine);
-  console.log('[onRequest] Resolved region from tagLine:', resolvedRegion);
-  regionalHost = resolvedRegion;
-}
-// Priority 4: For by-puuid endpoints, need region lookup
-else if (originalPath.includes('/by-puuid/')) {
-  console.log('[onRequest] by-puuid endpoint, need region lookup');
-  const puuidMatch = originalPath.match(/by-puuid\/([^/]+)/);
-  if (puuidMatch) {
-    puuid = puuidMatch[1];
+
+  let needsRegionalLookup: boolean = false;
+  let puuid = '';
+  const regionParam = url.searchParams.get('_region');
+
+  // Priority 1: Explicit region parameter
+  if (regionParam && ['americas', 'europe', 'asia', 'sea'].includes(regionParam)) {
+    console.log('[onRequest] Using explicit _region param:', regionParam);
+    regionalHost = regionParam as 'americas' | 'europe' | 'asia' | 'sea';
   }
-  needsRegionalLookup = true;
-}
-// Default fallback
-else {
-  console.log('[onRequest] Could not resolve region, using default fallback');
-  regionalHost = 'asia';
-}
+  // Priority 2: Extract region from Match ID (e.g., EUW1_7604740916 -> europe)
+  console.log("check region: ", tagLine, isAccountEndpoint)
+  if (isAccountEndpoint && tagToRegionalHost(tagLine) !== '') {
+    regionalHost = tagToRegionalHost(tagLine);
+  } else if (originalPath.includes('/matches/')) {
+    const matchIdRegion = extractRegionFromMatchId(originalPath);
+    if (matchIdRegion) {
+      console.log('[onRequest] Extracted region from Match ID:', matchIdRegion);
+      regionalHost = matchIdRegion;
+    }
+  } else if (originalPath.includes('/by-puuid/')) {
+    console.log('[onRequest] by-puuid endpoint, need region lookup');
+    const puuidMatch = originalPath.match(/by-puuid\/([^/]+)/);
+    if (puuidMatch) {
+      puuid = puuidMatch[1];
+    }
+    needsRegionalLookup = true;
+  }
+
   let targetHost = '';
   // Only do region lookup if we have a valid puuid and need it
-  if (needsRegionalLookup && puuid !== '') {
+  if (needsRegionalLookup && puuid !== '' || regionalHost === ''|| regionalHost === undefined) {
     try {
       console.log('[onRequest] Starting region lookup with puuid:', puuid);
       const regionLookupUrl = `https://asia.api.riotgames.com/riot/account/v1/region/by-game/lol/by-puuid/${encodeURIComponent(puuid)}`;
-      const lookupResp = await fetch(regionLookupUrl, { 
-        headers: { 
-          'X-Riot-Token': apiKey 
-        } 
+      const lookupResp = await fetch(regionLookupUrl, {
+        headers: {
+          'X-Riot-Token': apiKey
+        }
       });
       if (lookupResp.ok) {
         const regionDto: { puuid: string; game: string; region: string } = await lookupResp.json();
@@ -160,7 +148,6 @@ else {
       regionalHost = 'asia';
     }
   }
-  
   targetHost = `${regionalHost}.api.riotgames.com`;
 
   //这是代理服务器的核心：接收前端请求 → 转发到 Riot API → 拿到结果 → 返回给前端。整个过程隐藏了 API 密钥，并解决了跨域问题。
@@ -194,10 +181,8 @@ else {
     }
     const response = new Response(upstream.body, upstream);
     response.headers.set('Access-Control-Allow-Origin', corsOrigin);
-    
-    // Add X-Region-Used header so client can cache it
     response.headers.set('X-Region-Used', regionalHost);
-    
+
     console.log('[Functions] /api/riot', {
       status: upstream.status,
       durationMs,
