@@ -29,20 +29,65 @@ const DDRAGON_VERSION = '14.15.1';
 export function clearCache(): Promise<void> {
     return clearAllCaches();
 }
+// 保持原有的辅助函数不变
+function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' | '' {
+  if (!tag) return '';
+  const t = tag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (t.startsWith('BR') || t.startsWith('LA') || t.startsWith('NA') || t.startsWith('OC')) {
+    return 'americas';
+  }
+  if (t.startsWith('EU') || t.startsWith('TR') || t.startsWith('RU')) {
+    return 'europe';
+  }
+  if (t.startsWith('KR') || t.startsWith('JP')) {
+    return 'asia';
+  }
+  if (t.startsWith('PH') || t.startsWith('SG') || t.startsWith('TH') || t.startsWith('TW') || t.startsWith('VN')) {
+    return 'sea';
+  }
+  if (t.startsWith('PBE')) {
+    return 'americas';
+  }
+  console.log('[tagToRegionalHost] No match for tag:', tag, '- returning empty string');
+  return '';
+}
 
-// --- HELPER: API FETCHING ---
-async function apiFetch<T>(url: string, gameName?: string, tagLine?: string, isAccountEndpoint?: boolean): Promise<T> {
+// Helper function to extract region from match ID in path
+function extractRegionFromMatchId(pathname: string): string {
+  const matchIdMatch = pathname.match(/\/([A-Z]{2,3}\d?_\d+)$/);
+  if (matchIdMatch && matchIdMatch[1]) {
+    const matchId = matchIdMatch[1];
+    // 提取下划线前的区域前缀
+    const regionPrefix = matchId.split('_')[0];
+    return tagToRegionalHost(regionPrefix);
+  }
+  return '';
+}
+
+async function apiFetch<T>(url: string, gameName?: string, tagLine?: string, isMatchEndpoint: boolean = false): Promise<T> {
     const response = await fetch(url);
-    
-    // Extract region from response header and cache it
-    // ONLY cache region for account endpoints (by-riot-id), not for match endpoints
-    if (gameName && tagLine && response.ok && isAccountEndpoint) {
-        const regionFromResponse = response.headers.get('X-Region-Used');
-        if (regionFromResponse && regionFromResponse !== '') {
+    // Update: ONLY cache region for match endpoints
+    // Logic: Check Header -> If missing, Check MatchID in URL -> Set Cache
+    if (gameName && tagLine && response.ok && isMatchEndpoint) {
+        let regionToUse = response.headers.get('X-Region-Used');
+        if (!regionToUse || regionToUse === '') {
+            try {
+                const urlPath = new URL(url).pathname;
+                const derivedRegion = extractRegionFromMatchId(urlPath);
+                if (derivedRegion) {
+                    regionToUse = derivedRegion;
+                    console.log(`[apiFetch] Header missing. Derived region ${regionToUse} from MatchID in URL.`);
+                }
+            } catch (e) {
+                console.error('[apiFetch] Error parsing URL for region extraction', e);
+            }
+        }
+        // 如果拿到了有效的 region (无论是来自 Header 还是 MatchID)，则更新缓存
+        if (regionToUse && regionToUse !== '') {
             const validRegions = ['americas', 'europe', 'asia', 'sea'];
-            if (validRegions.includes(regionFromResponse)) {
-                await setCachedRegion(gameName, tagLine, regionFromResponse as 'americas' | 'europe' | 'asia' | 'sea');
-                console.log(`[apiFetch] Cached region ${regionFromResponse} for ${gameName}#${tagLine}`);
+            if (validRegions.includes(regionToUse)) {
+                await setCachedRegion(gameName, tagLine, regionToUse as 'americas' | 'europe' | 'asia' | 'sea');
+                console.log(`[apiFetch] Successfully get Cached region ${regionToUse} for ${gameName}#${tagLine}`);
             }
         }
     }
@@ -65,25 +110,20 @@ async function getPuuid(gameName: string, tagLine: string): Promise<string> {
     if (cached) {
         return cached;
     }
-    
-    // Do not pass tagLine as routing tag; proxy will default to americas for account lookups
-    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`, gameName, tagLine, true);
-    
-    // Cache the result in all layers
+    // 这里改为 false，Account Endpoint 不再触发 setCachedRegion
+    const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`, gameName, tagLine, false);
     await setCachedPuuid(gameName, tagLine, data.puuid);
-    console.log(`[getPuuid] Fetched and cached PUUID for ${gameName}#${tagLine}`);
     
     return data.puuid;
 }
 
 async function getMatchIds(puuid: string, gameName: string, tagLine: string): Promise<string[]> {
-    // Check multi-layer cache first (不再按 queueId 缓存)
+    // Check multi-layer cache first
     const cached = await getCachedMatchIds(puuid, undefined);
     if (cached) {
         return cached;
     }
     
-    // Query only matches in 2025. Keep the tag so the Worker can route correctly.
     const startOf2025Sec = Math.floor(Date.UTC(2025, 0, 1, 0, 0, 0) / 1000);
 
     const base = `${API_BASE_MATCH}/lol/match/v5/matches/by-puuid/${puuid}/ids`;
@@ -95,33 +135,30 @@ async function getMatchIds(puuid: string, gameName: string, tagLine: string): Pr
     
     const url = `${base}?${params.toString()}`;
     console.log('[getMatchIds] params', Object.fromEntries(params.entries()));
-    const matchIds = await apiFetch<string[]>(url, gameName, tagLine);
     
-    // Cache the result in all layers
+    // 这里默认为 false (match list 不含具体的 matchId string 用于提取 region，且 response header 此时可能不准确或不需要)
+    const matchIds = await apiFetch<string[]>(url, gameName, tagLine, false);
+    
     await setCachedMatchIds(puuid, undefined, matchIds);
     console.log(`[getMatchIds] Fetched and cached ${matchIds.length} match IDs for ${puuid}`);
+
     
     return matchIds;
 }
 
 async function getMatchDetails(matchId: string, gameName: string, tagLine: string): Promise<MatchDto> {
-    // Check multi-layer cache first (matchId is globally unique)
+    // Check multi-layer cache first
     const cached = await getCachedMatchDetails<MatchDto>(matchId);
     if (cached) {
         return cached;
     }
-    
-    // Wait for rate limit availability
     await rateLimiter.waitForAvailability();
     
-    // Do not pass tagLine as routing tag; proxy will resolve via puuid-derived region when needed
-    const matchDetails = await apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}`, gameName, tagLine);
+    const response = await apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}`, gameName, tagLine, true);
     
-    // Cache the result in all layers
-    await setCachedMatchDetails(matchId, matchDetails);
-    console.log(`[getMatchDetails] Fetched and cached match details for ${matchId}`);
+    await setCachedMatchDetails(matchId, response);
     
-    return matchDetails;
+    return response;
 }
 
 // --- HELPER: DATA PROCESSING & ANALYSIS ---

@@ -114,11 +114,11 @@ export async function onRequest(context: {
     }
   } else if (originalPath.includes('/by-puuid/')) {
     console.log('[onRequest] by-puuid endpoint, need region lookup');
-    const puuidMatch = originalPath.match(/by-puuid\/([^/]+)/);
-    if (puuidMatch) {
-      puuid = puuidMatch[1];
-    }
     needsRegionalLookup = true;
+  }
+  const puuidMatch = originalPath.match(/by-puuid\/([^/]+)/);
+  if (puuidMatch) {
+    puuid = puuidMatch[1];
   }
 
   let targetHost = '';
