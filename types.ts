@@ -52,7 +52,6 @@ export interface AnalysisResult {
   strengths: {
     title: string;
     description: string;
-    // Fix: Use the imported ReactNode type to resolve the 'Cannot find namespace React' error.
     icon: ReactNode;
   }[];
   growthCurve: GrowthDataPoint[];
