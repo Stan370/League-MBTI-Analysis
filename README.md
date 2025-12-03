@@ -390,14 +390,6 @@ cdk deploy
 5. ✅ **Cost Optimization**: Sub-$0.001 per player analysis
 6. ✅ **Beautiful UI**: Seamless integration of AI insights with data visualizations
 
-## 📚 What we learned
-
-1. **AWS Bedrock Capabilities**: Access to multiple foundation models through a single API
-2. **Serverless AI Architecture**: Lambda + Bedrock + DynamoDB creates powerful, cost-effective pipelines
-3. **Prompt Engineering**: Structured prompts dramatically improve response consistency
-4. **Cost Optimization**: Model selection, caching, and token limits are crucial for scale
-5. **DynamoDB for AI Caching**: Ideal for caching AI responses with automatic TTL expiration
-6. **Error Handling**: Validation, retries, and fallbacks ensure reliability
 
 ## 🔮 What's next
 
