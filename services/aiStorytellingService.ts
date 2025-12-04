@@ -32,7 +32,6 @@ Generate exactly 3 insights in this JSON format:
 Keep each insight under 25 words. Be specific, positive, and actionable.`;
 }
 
-// 成本优化：缓存策略（避免重复调用）
 const insightCache = new Map<string, { insights: any; timestamp: number }>();
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
