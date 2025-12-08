@@ -32,7 +32,6 @@ export class IncrementalDataLoader {
     for (let i = 0; i < range.length; i++) {
       try {
         const match = await this.fetchMatch(range[i]);
-        // 验证 gameType 和 queueId
         if (!match.info || match.info.gameType !== "MATCHED_GAME") {
           continue;
         }
