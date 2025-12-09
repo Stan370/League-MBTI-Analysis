@@ -94,7 +94,7 @@ Return AI Insights (playstyle, strengths, prediction)
 
 ## 🚀 Prerequisites
 
-- **Node.js 18+** and npm
+- **Node.js 18+** and npm, bun, yarn
 - **AWS Account** with Bedrock access enabled
 - **Riot API Key** (get from [Riot Developer Portal](https://developer.riotgames.com/))
 - **AWS CLI** configured with credentials
