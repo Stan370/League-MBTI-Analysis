@@ -1,5 +1,5 @@
 import React from 'react';
-import type { AnalysisResult, ChampionData, MatchData, AggregatedSummary } from '../types';
+import type { AnalysisResult, ChampionData, MatchData, AggregatedSummary, RecapStats } from '../types';
 import type { MatchDto } from '../types/riotApiTypes';
 import { QUEUE_NAMES, RANKED_QUEUE_IDS, CASUAL_QUEUE_IDS, ALLOWED_QUEUE_IDS } from '../types/riotApiTypes';
 import { BrainCircuitIcon, CrosshairIcon, ShieldCheckIcon, SwordsIcon } from '../components/icons';
@@ -16,11 +16,59 @@ import {
 } from './cacheService';
 import pLimit from 'p-limit';
 import { rateLimiter } from './rateLimiter';
+import { calculateMBTIHarness } from './mbtiMappingService';
+import { generateAIInsights } from './aiStorytellingService';
 
 // API requests are proxied through the Cloudflare Worker to keep the API key server-side
 const API_BASE_ACCOUNT = '/api';
 const API_BASE_MATCH = '/api/riot';
 const DDRAGON_VERSION = '14.15.1';
+
+const SOULMATE_MATCHES = [
+    {
+        champions: ['Xayah', 'Rakan'],
+        title: 'The Rebel Lovers',
+        description: "The most prominent romantic soulmates in Runeterra. They are fiercely devoted lovers who fight as a pair and complement each other's abilities completely.",
+        imageChampion: 'Xayah',
+    },
+    {
+        champions: ['Lucian', 'Senna'],
+        title: 'The Sentinels Bond',
+        description: "A powerful, married couple of Sentinel warriors who fought to save each other's souls from the undead clutches of the Black Mist.",
+        imageChampion: 'Lucian',
+    },
+    {
+        champions: ['Ashe', 'Tryndamere'],
+        title: 'The Freljord Vow',
+        description: 'A political marriage between Freljordian leaders that organically blossomed into genuine, lifelong love.',
+        imageChampion: 'Ashe',
+    },
+    {
+        champions: ['Garen', 'Katarina'],
+        title: 'The Forbidden Duel',
+        description: 'An ongoing, forbidden Romeo and Juliet dynamic between a Demacian warrior and a Noxian assassin who harbor deep, secret feelings for each other.',
+        imageChampion: 'Garen',
+    },
+];
+
+const CHAMPION_EASTER_EGGS: Record<string, { title: string; description: string }> = {
+    Zed: {
+        title: 'Living Shadow Protocol',
+        description: "Unlike many other champions, Zed's playstyle relies on pure adaptation to a given situation.",
+    },
+    Yasuo: {
+        title: 'The Wind Wall Clause',
+        description: 'Your games carry the signature of a duelist who accepts volatility as the price of decisive moments.',
+    },
+    Teemo: {
+        title: 'Scout Code Detected',
+        description: 'Your map pressure leaves traps, tempo, and second thoughts in places opponents expected safety.',
+    },
+    Jhin: {
+        title: 'Fourth Shot Finale',
+        description: 'Your best moments read like staged executions: patient setup, clean range control, and a final number that matters.',
+    },
+};
 
 /**
  * Clear all caches (memory + IndexedDB)
@@ -590,22 +638,8 @@ function generateAnalysis(
     };
     const kda = (stats.avgKills + stats.avgAssists) / (stats.avgDeaths || 1);
     const strengths = [];
-    
-    // Score-based MBTI determination TODO: improve this
-    let scores = { E: 0, I: 0, N: 0, S: 0, T: 0, F: 0, J: 0, P: 0 };
-    if (stats.avgDamageDealtPercentage > 28) scores.E++; else scores.I++;
-    if (stats.avgKills > 7) scores.E++; else scores.I++;
-    
-    if (stats.avgVisionScorePerMin > 1.5) scores.N++; else scores.S++;
-    if (stats.avgAssists > 8) scores.N++; else scores.S++;
-
-    if (kda > 4.0) scores.T++; else scores.F++;
-    if (stats.avgDeaths < 5) scores.T++; else scores.F++;
-
-    if (stats.avgGoldPerMin > 420) scores.J++; else scores.P++;
-    if (stats.avgKills / (stats.totalGames || 1) < 0.5) scores.J++; else scores.P++;
-
-    const mbti = `${scores.E > scores.I ? 'E' : 'I'}${scores.N > scores.S ? 'N' : 'S'}${scores.T > scores.F ? 'T' : 'F'}${scores.J > scores.P ? 'J' : 'P'}`;
+    const mbtiHarness = calculateMBTIHarness(matchData);
+    const mbti = mbtiHarness.mbtiType;
 
     // Determine strengths
     if (stats.avgDamageDealtPercentage >= 28) {
@@ -639,6 +673,66 @@ function generateAnalysis(
             };
         });
 
+    const roleCounts = matchData.reduce<Record<string, number>>((acc, match) => {
+        const role = match.position || 'UNKNOWN';
+        acc[role] = (acc[role] || 0) + 1;
+        return acc;
+    }, {});
+    const mostPlayedRole = Object.entries(roleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'FILL';
+    const recapStats = matches.reduce<RecapStats>((recap, match) => {
+        const player = match.info?.participants.find(p => p.puuid === puuid);
+        const playerTeam = match.info?.teams.find(team => team.teamId === player?.teamId);
+        const objectives = playerTeam?.objectives;
+        if (objectives) {
+            recap.baronKills += objectives.baron?.kills || 0;
+            recap.dragonKills += objectives.dragon?.kills || 0;
+            recap.riftHeraldKills += objectives.riftHerald?.kills || 0;
+            recap.towerKills += objectives.tower?.kills || 0;
+            recap.inhibitorKills += objectives.inhibitor?.kills || 0;
+        }
+        return recap;
+    }, {
+        totalTeamObjectives: 0,
+        baronKills: 0,
+        dragonKills: 0,
+        riftHeraldKills: 0,
+        towerKills: 0,
+        inhibitorKills: 0,
+        totalTakedowns: matchData.reduce((sum, m) => sum + m.kills + m.assists, 0),
+        shortGames: matchData.filter(m => m.gameDuration < 20 * 60).length,
+        championPoolSize: Object.keys(stats.championStats).length,
+        mostPlayedRole,
+        soulmate: {
+            title: 'The Flexible Pair',
+            champions: 'Xayah & Rakan',
+            description: SOULMATE_MATCHES[0].description,
+            matchedBecause: "Your champion pool did not contain a canonical pair, so the recap defaults to League's clearest duo fantasy.",
+            imageUrl: `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${SOULMATE_MATCHES[0].imageChampion}_0.jpg`,
+        },
+        easterEggs: [],
+    });
+    recapStats.totalTeamObjectives = recapStats.baronKills + recapStats.dragonKills + recapStats.riftHeraldKills + recapStats.towerKills + recapStats.inhibitorKills;
+
+    const championNames = new Set(Object.keys(stats.championStats));
+    const soulmateMatch = SOULMATE_MATCHES.find(pair => pair.champions.some(champion => championNames.has(champion))) || SOULMATE_MATCHES[0];
+    const matchedChampion = soulmateMatch.champions.find(champion => championNames.has(champion));
+    recapStats.soulmate = {
+        title: soulmateMatch.title,
+        champions: soulmateMatch.champions.join(' & '),
+        description: soulmateMatch.description,
+        matchedBecause: matchedChampion
+            ? `Matched because ${matchedChampion} appears in your champion pool.`
+            : 'Matched as a featured Runeterra soulmate pair for your recap.',
+        imageUrl: `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${soulmateMatch.imageChampion}_0.jpg`,
+    };
+    recapStats.easterEggs = Object.keys(CHAMPION_EASTER_EGGS)
+        .filter(champion => championNames.has(champion))
+        .map(champion => ({
+            champion,
+            ...CHAMPION_EASTER_EGGS[champion],
+            imageUrl: `https://ddragon.leagueoflegends.com/cdn/img/champion/splash/${champion}_0.jpg`,
+        }));
+
     const archetypeMap: Record<string, { title: string, description: string }> = {
         'ENTJ': { title: "The Field Marshal", description: "A natural leader who commands the rift with strategic prowess and decisive action. You see the path to victory and rally your team to follow it." },
         'INTJ': { title: "The Grandmaster", description: "A strategic visionary who outthinks the opponent. Your game is a complex chess match, and you're always five moves ahead."},
@@ -668,6 +762,14 @@ function generateAnalysis(
         topChampions,
         matchData,
         aggregatedSummary,
+        recapStats,
+        mbtiDetails: mbtiHarness,
+        aiInsights: {
+            playstyle: 'Narrative loading...',
+            strengths: [],
+            growthAreas: [],
+            prediction: 'Narrative loading...',
+        },
     };
 }
 
@@ -716,5 +818,44 @@ export const analyzePlayer = async (
         );
     }
     
-    return generateAnalysis(aggregatedStats, matches, puuid, gameName, tagLine);
+    const analysis = generateAnalysis(aggregatedStats, matches, puuid, gameName, tagLine);
+
+    const roleDistribution = analysis.matchData.reduce<Record<string, number>>((acc, m) => {
+        acc[m.position || 'UNKNOWN'] = (acc[m.position || 'UNKNOWN'] || 0) + 1;
+        return acc;
+    }, {});
+    const topChampionRoles = analysis.matchData
+        .slice(0, 30)
+        .map(m => `${m.championName}:${m.position || 'UNKNOWN'}`);
+
+    let winStreak = 0;
+    let lossStreak = 0;
+    let currentWin = 0;
+    let currentLoss = 0;
+    for (const m of [...analysis.matchData].reverse()) {
+        if (m.win) {
+            currentWin++;
+            currentLoss = 0;
+            winStreak = Math.max(winStreak, currentWin);
+        } else {
+            currentLoss++;
+            currentWin = 0;
+            lossStreak = Math.max(lossStreak, currentLoss);
+        }
+    }
+    const monthlyData = analysis.growthCurve;
+    const playstylePatterns = [
+        `Avg DPM ${aggregatedStats.avgDamageDealtPerMin.toFixed(0)}`,
+        `Avg VPM ${aggregatedStats.avgVisionScorePerMin.toFixed(2)}`,
+        `Champion pool ${Object.keys(aggregatedStats.championStats).length}`,
+    ];
+    const playerId = `${gameName}#${tagLine}`;
+    analysis.aiInsights = await generateAIInsights(aggregatedStats, monthlyData, playerId, {
+        roleDistribution,
+        topChampionRoles,
+        winStreak,
+        lossStreak,
+        playstylePatterns,
+    });
+    return analysis;
 };

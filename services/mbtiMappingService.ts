@@ -14,78 +14,140 @@ export interface MBTIScores {
   P: number; // Perceiving - 感知：灵活应变
 }
 
-/**
- * 从游戏数据计算MBTI得分
- */
-export function calculateMBTIScores(games: FilteredPlayerData[]): MBTIScores {
+export interface MBTIMetrics {
+  assistsPerGame: number;
+  killsPerGame: number;
+  deathsPerGame: number;
+  kda: number;
+  damagePerMin: number;
+  visionPerMin: number;
+  goldPerMin: number;
+  championPoolRatio: number;
+  roleDiversityRatio: number;
+  supportRate: number;
+}
+
+export interface MBTIHarnessResult {
+  mbtiType: string;
+  scores: MBTIScores;
+  confidence: number;
+  metrics: MBTIMetrics;
+  pairMargins: { EI: number; SN: number; TF: number; JP: number };
+  rules: typeof MBTI_RULES;
+}
+
+const BASELINES = {
+  assistsPerGame: { mean: 8, std: 3 },
+  killsPerGame: { mean: 6, std: 2.5 },
+  deathsPerGame: { mean: 5.5, std: 1.8 },
+  kda: { mean: 2.5, std: 1.2 },
+  damagePerMin: { mean: 620, std: 180 },
+  visionPerMin: { mean: 1.1, std: 0.45 },
+  goldPerMin: { mean: 390, std: 80 },
+  championPoolRatio: { mean: 0.35, std: 0.2 },
+  roleDiversityRatio: { mean: 0.35, std: 0.25 },
+  supportRate: { mean: 0.2, std: 0.25 },
+};
+
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+const z = (value: number, mean: number, std: number) => clamp((value - mean) / Math.max(std, 0.0001), -2.5, 2.5);
+
+function average(values: number[]): number {
+  return values.length ? values.reduce((sum, n) => sum + n, 0) / values.length : 0;
+}
+
+export function computeMBTIMetrics(games: FilteredPlayerData[]): MBTIMetrics {
+  const totalGames = Math.max(games.length, 1);
+  const kills = average(games.map(g => g.kills));
+  const deaths = average(games.map(g => g.deaths));
+  const assists = average(games.map(g => g.assists));
+  const damagePerMin = average(games.map(g => g.totalDamageDealtToChampions / Math.max(g.gameDuration / 60, 1)));
+  const visionPerMin = average(games.map(g => g.visionScore / Math.max(g.gameDuration / 60, 1)));
+  const goldPerMin = average(games.map(g => g.goldEarned / Math.max(g.gameDuration / 60, 1)));
+  const championPoolRatio = new Set(games.map(g => g.championName)).size / totalGames;
+  const roleDiversityRatio = new Set(games.map(g => g.position)).size / 5;
+  const supportRate = games.filter(g => g.position === 'UTILITY').length / totalGames;
+
+  return {
+    assistsPerGame: assists,
+    killsPerGame: kills,
+    deathsPerGame: deaths,
+    kda: (kills + assists) / Math.max(deaths, 1),
+    damagePerMin,
+    visionPerMin,
+    goldPerMin,
+    championPoolRatio,
+    roleDiversityRatio,
+    supportRate,
+  };
+}
+
+function normalized(value: number, key: keyof typeof BASELINES): number {
+  return z(value, BASELINES[key].mean, BASELINES[key].std);
+}
+
+export const MBTI_RULES = {
+  EI: 'E = assists/game + support rate + vision/min. I = kills/game + carry damage/min.',
+  SN: 'S = low deaths + stable KDA. N = high volatility (death pressure) + high-risk pace.',
+  TF: 'T = damage/gold efficiency. F = vision/support utility.',
+  JP: 'J = consistency (champion specialization + lower role switching). P = flexibility (wide champion/role pool).',
+  confidence: 'Confidence comes from average absolute margin across EI/SN/TF/JP, normalized to 0-1.',
+};
+
+export function calculateMBTIHarness(games: FilteredPlayerData[]): MBTIHarnessResult {
+  const metrics = computeMBTIMetrics(games);
   const scores: MBTIScores = { E: 0, I: 0, S: 0, N: 0, T: 0, F: 0, J: 0, P: 0 };
-  
-  for (const game of games) {
-    const kda = (game.kills + game.assists) / Math.max(game.deaths, 1);
-    const killParticipation = (game.kills + game.assists) / Math.max(game.kills + game.assists + 1, 1);
-    const damagePerMin = game.totalDamageDealtToChampions / (game.gameDuration / 60);
-    const visionPerMin = game.visionScore / (game.gameDuration / 60);
-    const goldPerMin = game.goldEarned / (game.gameDuration / 60);
-    
-    // E vs I: 团战参与 vs 独立发育
-    if (game.assists > game.kills) {
-      scores.E += 2; // 高助攻 = 团队参与
-    } else {
-      scores.I += 1; // 高击杀 = 独立carry
-    }
-    
-    if (killParticipation > 0.6) {
-      scores.E += 1; // 参与率高
-    } else {
-      scores.I += 1; // 独立发育
-    }
-    
-    // S vs N: 稳定 vs 冒险
-    if (game.deaths <= 3) {
-      scores.S += 2; // 低死亡 = 稳健
-    } else if (game.deaths >= 8) {
-      scores.N += 2; // 高死亡 = 激进
-    }
-    
-    if (kda >= 3) {
-      scores.S += 1; // 高KDA = 稳定
-    } else if (kda < 1.5) {
-      scores.N += 1; // 低KDA = 冒险
-    }
-    
-    // T vs F: 输出 vs 支援
-    if (damagePerMin > 500) {
-      scores.T += 2; // 高伤害 = 效率导向
-    }
-    
-    if (visionPerMin > 1.5) {
-      scores.F += 2; // 高视野 = 团队支持
-    }
-    
-    if (game.position === 'UTILITY') {
-      scores.F += 2; // 辅助位 = 支援型
-    } else if (game.position === 'MIDDLE' || game.position === 'BOTTOM') {
-      scores.T += 1; // Carry位 = 输出型
-    }
-    
-    // J vs P: 计划 vs 灵活
-    if (goldPerMin > 400) {
-      scores.J += 1; // 高经济 = 有计划的发育
-    }
-    
-    if (game.visionScore > 30) {
-      scores.J += 1; // 高视野 = 有规划
-    }
-    
-    const championVariety = new Set(games.map(g => g.championName)).size;
-    if (championVariety > games.length * 0.5) {
-      scores.P += 2; // 英雄池广 = 灵活应变
-    } else {
-      scores.J += 1; // 专精少数英雄 = 计划性
-    }
-  }
-  
-  return scores;
+
+  const eSignal = normalized(metrics.assistsPerGame, 'assistsPerGame') * 0.45 +
+    normalized(metrics.visionPerMin, 'visionPerMin') * 0.25 +
+    normalized(metrics.supportRate, 'supportRate') * 0.3;
+  const iSignal = normalized(metrics.killsPerGame, 'killsPerGame') * 0.5 +
+    normalized(metrics.damagePerMin, 'damagePerMin') * 0.5;
+
+  const sSignal = normalized(-metrics.deathsPerGame, 'deathsPerGame') * 0.5 +
+    normalized(metrics.kda, 'kda') * 0.5;
+  const nSignal = normalized(metrics.deathsPerGame, 'deathsPerGame') * 0.4 +
+    normalized(metrics.damagePerMin, 'damagePerMin') * 0.2 +
+    normalized(metrics.killsPerGame, 'killsPerGame') * 0.4;
+
+  const tSignal = normalized(metrics.damagePerMin, 'damagePerMin') * 0.55 +
+    normalized(metrics.goldPerMin, 'goldPerMin') * 0.45;
+  const fSignal = normalized(metrics.visionPerMin, 'visionPerMin') * 0.5 +
+    normalized(metrics.supportRate, 'supportRate') * 0.5;
+
+  const pSignal = normalized(metrics.championPoolRatio, 'championPoolRatio') * 0.65 +
+    normalized(metrics.roleDiversityRatio, 'roleDiversityRatio') * 0.35;
+  const jSignal = -pSignal;
+
+  scores.E = Math.max(0, eSignal);
+  scores.I = Math.max(0, iSignal);
+  scores.S = Math.max(0, sSignal);
+  scores.N = Math.max(0, nSignal);
+  scores.T = Math.max(0, tSignal);
+  scores.F = Math.max(0, fSignal);
+  scores.J = Math.max(0, jSignal);
+  scores.P = Math.max(0, pSignal);
+
+  const pairMargins = {
+    EI: eSignal - iSignal,
+    SN: nSignal - sSignal,
+    TF: tSignal - fSignal,
+    JP: jSignal - pSignal,
+  };
+
+  const mbtiType = determineMBTI(scores);
+  const confidence = clamp(
+    average([
+      Math.abs(pairMargins.EI),
+      Math.abs(pairMargins.SN),
+      Math.abs(pairMargins.TF),
+      Math.abs(pairMargins.JP),
+    ]) / 2,
+    0,
+    1
+  );
+
+  return { mbtiType, scores, confidence, metrics, pairMargins, rules: MBTI_RULES };
 }
 
 /**
@@ -101,62 +163,10 @@ export function determineMBTI(scores: MBTIScores): string {
 }
 
 /**
- * 关键数据到MBTI的映射逻辑
+ * 兼容旧调用：返回维度分数
  */
-export const MBTI_MAPPING = {
-  // E (外向) - 团队参与型
-  E: [
-    'assists > kills → 更多助攻说明参与团战',
-    'killParticipation > 60% → 高参与率',
-    'teamPosition = UTILITY → 辅助位天然团队型',
-  ],
-  
-  // I (内向) - 独立发育型
-  I: [
-    'kills > assists → 更多单杀',
-    'killParticipation < 40% → 独立carry',
-    'totalMinionsKilled高 → 专注发育',
-  ],
-  
-  // S (实感) - 稳健型
-  S: [
-    'deaths低 (≤3) → 谨慎不送',
-    'kda高 (≥3) → 稳定输出',
-    'win rate稳定 → 可靠',
-  ],
-  
-  // N (直觉) - 激进型
-  N: [
-    'deaths高 (≥8) → 激进换血',
-    'kda波动大 → 高风险高回报',
-    'kills极高或极低 → 不稳定',
-  ],
-  
-  // T (思考) - 效率型
-  T: [
-    'damagePerMinute高 → 输出效率',
-    'goldPerMinute高 → 经济效率',
-    'totalDamageDealtToChampions高 → 伤害优先',
-  ],
-  
-  // F (情感) - 支援型
-  F: [
-    'visionScore高 → 视野支持',
-    'assists高 → 帮助队友',
-    'position = UTILITY → 辅助角色',
-  ],
-  
-  // J (判断) - 计划型
-  J: [
-    'goldPerMinute稳定 → 有规划的发育',
-    'visionScore高 → 提前布局',
-    '专精少数英雄 → 计划性强',
-  ],
-  
-  // P (感知) - 灵活型
-  P: [
-    '英雄池广 → 适应性强',
-    'position多变 → 灵活补位',
-    'championName多样 → 随机应变',
-  ],
-};
+export function calculateMBTIScores(games: FilteredPlayerData[]): MBTIScores {
+  return calculateMBTIHarness(games).scores;
+}
+
+export const MBTI_MAPPING = MBTI_RULES;

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { MBTIHarnessResult } from './services/mbtiMappingService';
 
 export interface ChampionData {
   name: string;
@@ -40,6 +41,32 @@ export interface AggregatedSummary {
   avgGoldPerMin: number;
 }
 
+export interface RecapStats {
+  totalTeamObjectives: number;
+  baronKills: number;
+  dragonKills: number;
+  riftHeraldKills: number;
+  towerKills: number;
+  inhibitorKills: number;
+  totalTakedowns: number;
+  shortGames: number;
+  championPoolSize: number;
+  mostPlayedRole: string;
+  soulmate: {
+    title: string;
+    champions: string;
+    description: string;
+    matchedBecause: string;
+    imageUrl: string;
+  };
+  easterEggs: Array<{
+    champion: string;
+    title: string;
+    description: string;
+    imageUrl: string;
+  }>;
+}
+
 export interface AnalysisResult {
   summonerName: string;
   tag: string;
@@ -58,4 +85,12 @@ export interface AnalysisResult {
   topChampions: ChampionData[];
   matchData: MatchData[];
   aggregatedSummary: AggregatedSummary;
+  recapStats: RecapStats;
+  mbtiDetails: MBTIHarnessResult;
+  aiInsights: {
+    playstyle: string;
+    strengths: string[];
+    growthAreas: string[];
+    prediction: string;
+  };
 }

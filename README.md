@@ -6,7 +6,7 @@
 
 # League MBTI Analytics
 
-A React application that analyzes League of Legends player behavior and uses **AWS Bedrock** to generate personalized MBTI-style personality insights and AI-powered storytelling narratives.
+A Web application that analyzes League of Legends player behavior and uses **AWS Bedrock** to generate personalized MBTI-style personality insights and AI-powered storytelling narratives.
 
 ## 🎯 Inspiration
 
@@ -25,6 +25,17 @@ League-MBTI-Analysis is a React web application that analyzes League of Legends 
 5. **Visualizes Insights**: Displays performance charts, growth trends, and queue breakdowns with AI-generated storytelling
 
 The app distinguishes between team-oriented players (high assists = Extroverted) and solo carries (high kills = Introverted), cautious strategists (low deaths = Sensing) and aggressive risk-takers (high volatility = Intuitive), with **AWS Bedrock** providing context-aware insights that make these patterns meaningful and actionable.
+
+## MBTI Harness Rules (Unified)
+
+The MBTI scoring is now unified in `services/mbtiMappingService.ts` via `calculateMBTIHarness()` and uses normalized metrics (z-score style clamped to `[-2.5, 2.5]`) instead of only raw thresholds.
+
+- `E/I`: `E` favors assists/game, vision/min, support rate. `I` favors kills/game and damage/min.
+- `S/N`: `S` favors low deaths and stable KDA. `N` favors high-risk tempo (deaths + kill pace).
+- `T/F`: `T` favors damage/gold efficiency. `F` favors vision + support utility.
+- `J/P`: `J` favors consistency/specialization. `P` favors champion and role flexibility.
+
+Confidence is computed from average absolute pair margins (`EI`, `SN`, `TF`, `JP`) and normalized to `0-1`.
 
 ## 🏗️ How we built it
 

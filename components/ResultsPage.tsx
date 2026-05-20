@@ -11,7 +11,7 @@ interface ResultsPageProps {
 
 const Section: React.FC<{title: string; children: React.ReactNode; className?: string}> = ({ title, children, className = '' }) => (
     <div className={`w-full max-w-7xl mx-auto py-16 px-4 md:px-8 bg-[#0A1428]/50 border border-[#2D899B]/30 backdrop-blur-sm mb-8 ${className}`}>
-        <h2 className="text-5xl font-bold text-center mb-12 uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-cyan-500">{title}</h2>
+        <h2 className="text-5xl font-bold text-center mb-12 uppercase tracking-widest text-[#CDA434]">{title}</h2>
         {children}
     </div>
 );
@@ -228,17 +228,79 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
       {/* Archetype Section */}
       <header className="text-center mb-16">
         <h1 className="text-6xl md:text-8xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-400">{analysis.summonerName}</h1>
-        <p className="text-4xl text-[#CDA434] mt-2">{analysis.archetype.title} - {analysis.archetype.mbti}</p>
       </header>
 
-      <Section title="Your Archetype">
-        <div className="flex flex-col md:flex-row items-center gap-8">
-            <div className="md:w-1/2">
-                <img src={analysis.archetype.imageUrl} alt={analysis.archetype.title} className="w-full h-auto border-4 border-[#CDA434]/50" />
+      <Section title={`${analysis.archetype.title} - ${analysis.archetype.mbti}`}>
+        <div className="grid md:grid-cols-[0.9fr_1.1fr] gap-8 items-stretch">
+          <img src={analysis.archetype.imageUrl} alt={analysis.archetype.title} className="w-full h-full object-cover border-4 border-[#CDA434]/50" />
+          <div className="bg-[#010A13]/70 p-6 border border-[#2D899B]/30 text-xl leading-relaxed text-gray-300 space-y-5">
+            <p>{analysis.archetype.description}</p>
+            <p>{analysis.aiInsights.playstyle} {analysis.aiInsights.prediction}</p>
+            <p>
+              Your MBTI harness confidence is <span className="font-bold text-cyan-400">{(analysis.mbtiDetails.confidence * 100).toFixed(0)}%</span>, with
+              {' '}<span className="text-[#CDA434]">{analysis.mbtiDetails.metrics.damagePerMin.toFixed(0)}</span> damage per minute,
+              {' '}<span className="text-[#CDA434]">{analysis.mbtiDetails.metrics.visionPerMin.toFixed(2)}</span> vision per minute, and a
+              {' '}<span className="text-[#CDA434]">{analysis.mbtiDetails.metrics.championPoolRatio.toFixed(2)}</span> champion pool ratio.
+            </p>
+            <p><span className="text-[#CDA434]">E/I:</span> {analysis.mbtiDetails.rules.EI}</p>
+            <p><span className="text-[#CDA434]">S/N:</span> {analysis.mbtiDetails.rules.SN}</p>
+            <p><span className="text-[#CDA434]">T/F:</span> {analysis.mbtiDetails.rules.TF}</p>
+            <p><span className="text-[#CDA434]">J/P:</span> {analysis.mbtiDetails.rules.JP}</p>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Together We Are Strong">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="md:row-span-2 bg-[#010A13]/70 border border-[#2D899B]/30 p-6">
+            <h3 className="text-3xl font-bold text-white mb-8">Objective Control</h3>
+            <p className="text-2xl leading-relaxed text-gray-300">
+              You and your team secured <span className="font-bold text-white">{analysis.recapStats.totalTeamObjectives.toLocaleString()} objectives</span> this season.
+            </p>
+            <p className="text-2xl leading-relaxed text-gray-300 mt-8">
+              Your most played role was <span className="font-bold text-white">{analysis.recapStats.mostPlayedRole}</span>, with a champion pool of <span className="font-bold text-white">{analysis.recapStats.championPoolSize}</span>.
+            </p>
+          </div>
+          {[
+            ['Rift Herald', analysis.recapStats.riftHeraldKills, 'kills'],
+            ['Baron', analysis.recapStats.baronKills, 'kills'],
+            ['Dragon', analysis.recapStats.dragonKills, 'kills'],
+            ['Towers', analysis.recapStats.towerKills, 'destroyed'],
+            ['Inhibitors', analysis.recapStats.inhibitorKills, 'destroyed'],
+            ['Takedowns', analysis.recapStats.totalTakedowns, 'total'],
+          ].map(([label, value, suffix]) => (
+            <div key={label} className="bg-[#010A13]/70 border border-[#2D899B]/30 p-6 min-h-44">
+              <h3 className="text-3xl font-bold text-white mb-8">{label}</h3>
+              <p className="text-xl text-gray-300">Team total</p>
+              <p className="text-4xl font-bold text-white mt-2">{Number(value).toLocaleString()} <span className="text-2xl font-normal">{suffix}</span></p>
             </div>
-            <div className="md:w-1/2">
-                <p className="text-2xl text-gray-300 leading-relaxed">{analysis.archetype.description}</p>
+          ))}
+          <div className="md:col-span-2 bg-[#010A13]/70 border border-[#2D899B]/30 p-6">
+            <h3 className="text-3xl font-bold text-white mb-6">Let Us Out</h3>
+            <p className="text-2xl leading-relaxed text-gray-300">
+              Your sample included <span className="font-bold text-white">{analysis.recapStats.shortGames}</span> games under 20 minutes.
+            </p>
+          </div>
+          <div className="md:col-span-2 bg-[#010A13]/70 border border-[#2D899B]/30 p-6">
+            <h3 className="text-3xl font-bold text-white mb-6">Soulmate Match</h3>
+            <div className="flex flex-col sm:flex-row gap-5 items-center">
+              <img src={analysis.recapStats.soulmate.imageUrl} alt={analysis.recapStats.soulmate.champions} className="w-full sm:w-48 h-32 object-cover border border-[#CDA434]/50" />
+              <div>
+                <p className="text-2xl font-bold text-[#CDA434]">{analysis.recapStats.soulmate.champions}</p>
+                <p className="text-xl text-gray-300 mt-2">{analysis.recapStats.soulmate.description}</p>
+                <p className="text-lg text-gray-500 mt-2">{analysis.recapStats.soulmate.matchedBecause}</p>
+              </div>
             </div>
+          </div>
+          {analysis.recapStats.easterEggs.map(egg => (
+            <div key={egg.champion} className="md:col-span-2 bg-[#010A13]/70 border border-[#CDA434]/40 p-6">
+              <h3 className="text-3xl font-bold text-white mb-6">{egg.title}</h3>
+              <div className="flex flex-col sm:flex-row gap-5 items-center">
+                <img src={egg.imageUrl} alt={egg.champion} className="w-full sm:w-48 h-32 object-cover border border-[#CDA434]/50" />
+                <p className="text-2xl leading-relaxed text-gray-300">{egg.description}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </Section>
       
