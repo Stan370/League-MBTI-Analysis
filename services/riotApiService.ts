@@ -141,13 +141,20 @@ async function apiFetch<T>(url: string, gameName?: string, tagLine?: string, isM
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        if (response.status === 403) throw new Error("Forbidden: Check your Riot API key.");
-        if (response.status === 404) throw new Error("Player or match data not found. Please check Summoner Name and Tag.");
-        if (response.status === 500 && errorData.error) {
+
+        if (response.status === 403) {
+            throw new Error("Forbidden: Check your Riot API key.");
+        } else if (response.status === 404) {
+            throw new Error("Player or match data not found. Please check Summoner Name and Tag.");
+        } else if (response.status === 429) {
+            throw new Error("Rate limit exceeded, please wait a 10s and try again.");
+        } else if (response.status === 500 && errorData.error) {
             throw new Error(errorData.error);
+        } else {
+            throw new Error(`Riot API request failed: ${response.status} ${response.statusText}`);
         }
-        throw new Error(`Riot API request failed: ${response.status} ${response.statusText}`);
     }
+
     return response.json() as Promise<T>;
 }
 

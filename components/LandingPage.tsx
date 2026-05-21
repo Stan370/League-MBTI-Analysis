@@ -38,9 +38,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onAnalyze, error }) => {
         </h1>
 
         <h2 className="mt-4 text-2xl md:text-3xl text-gray-300 italic tracking-wide">
-          Your <span className="text-[#CDA434] font-semibold">AI Coach</span> & Chronicler —  
-          <br className="hidden md:block" />  
-          Turning your ranked grind into a saga of triumph and chaos.
+          A fun League <span className="text-[#CDA434] font-semibold">AI</span> Analytics           <br className="hidden md:block" />
+          Turning your 2026 game journey into a story of growth, triumph.
+
         </h2>
 
         <form onSubmit={handleSubmit} className="mt-12 w-full max-w-lg mx-auto">
@@ -70,7 +70,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onAnalyze, error }) => {
 
           {error && <p className="text-red-400 mt-4 text-xl">{error}</p>}
 
-          
+
           <button
             type="submit"
             className="group relative mt-8 w-full text-3xl font-bold uppercase tracking-widest text-[#CDA434] bg-transparent px-8 py-4 border-2 border-[#CDA434] transition-all duration-300 ease-in-out overflow-hidden"
@@ -82,7 +82,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onAnalyze, error }) => {
         </form>
 
         <footer className="mt-10 text-gray-500 text-lg">
-          Not affiliated with Riot Games.
+          Created by Stan
         </footer>
       </div>
 

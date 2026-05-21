@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="gold-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F9EBC8" />
+      <stop offset="50%" stop-color="#CDA434" />
+      <stop offset="100%" stop-color="#846323" />
+    </linearGradient>
+    <linearGradient id="cyan-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#005A82" />
+      <stop offset="50%" stop-color="#00C8FF" />
+      <stop offset="100%" stop-color="#7DF0FF" />
+    </linearGradient>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#051221" />
+      <stop offset="100%" stop-color="#010A13" />
+    </linearGradient>
+    
+    <!-- Glow Filters -->
+    <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+    <filter id="glow-gold" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Hextech Shield Background -->
+  <path d="M 256,24 L 456,124 L 456,388 L 256,488 L 56,388 L 56,124 Z" fill="url(#bg-grad)" stroke="url(#gold-grad)" stroke-width="16" stroke-linejoin="round" />
+  
+  <!-- Inner Hextech Framing Accent -->
+  <path d="M 256,44 L 436,134 L 436,378 L 256,468 L 76,378 L 76,134 Z" fill="none" stroke="#0e3955" stroke-width="4" stroke-dasharray="20,10" />
+
+  <!-- Corner Gold Brackets for premium detail -->
+  <path d="M 256,60 L 280,72 M 256,60 L 232,72" stroke="url(#gold-grad)" stroke-width="8" stroke-linecap="round" />
+  <path d="M 420,140 L 400,170" stroke="url(#gold-grad)" stroke-width="8" stroke-linecap="round" />
+  <path d="M 92,140 L 112,170" stroke="url(#gold-grad)" stroke-width="8" stroke-linecap="round" />
+  <path d="M 420,372 L 400,342" stroke="url(#gold-grad)" stroke-width="8" stroke-linecap="round" />
+  <path d="M 92,372 L 112,342" stroke="url(#gold-grad)" stroke-width="8" stroke-linecap="round" />
+  <path d="M 256,452 L 280,440 M 256,452 L 232,440" stroke="url(#gold-grad)" stroke-width="8" stroke-linecap="round" />
+
+  <!-- Central Design: Fusion of Sword (League) & Neural Brain/Circuit (MBTI) -->
+  <g transform="translate(0, 0)">
+    <!-- Sword Blade / Central Logic Axis (Glowing Cyan) -->
+    <path d="M 256,120 L 256,370" stroke="url(#cyan-grad)" stroke-width="12" stroke-linecap="round" filter="url(#glow-cyan)" />
+    <!-- Sword Tip -->
+    <path d="M 256,120 L 244,145 L 268,145 Z" fill="url(#cyan-grad)" filter="url(#glow-cyan)" />
+    <!-- Sword Crossguard (Hextech Gold) -->
+    <path d="M 216,350 L 296,350" stroke="url(#gold-grad)" stroke-width="10" stroke-linecap="round" filter="url(#glow-gold)" />
+    <!-- Sword Pommel Node -->
+    <circle cx="256" cy="385" r="12" fill="url(#gold-grad)" filter="url(#glow-gold)" />
+
+    <!-- Left Hemisphere Circuit (Vibrant Cyan) -->
+    <!-- Inner brain loop -->
+    <path d="M 256,170 C 190,170 160,200 160,245 C 160,285 190,300 210,300 C 230,300 240,315 240,330" fill="none" stroke="url(#cyan-grad)" stroke-width="8" stroke-linecap="round" filter="url(#glow-cyan)" />
+    <!-- Outer brain loop -->
+    <path d="M 256,145 C 150,145 110,195 110,255 C 110,315 170,340 216,340" fill="none" stroke="url(#cyan-grad)" stroke-width="6" stroke-linecap="round" filter="url(#glow-cyan)" />
+    
+    <!-- Left Circuit Nodes & Connections -->
+    <line x1="160" y1="245" x2="130" y2="245" stroke="url(#cyan-grad)" stroke-width="4" filter="url(#glow-cyan)" />
+    <circle cx="130" cy="245" r="10" fill="#010a13" stroke="url(#cyan-grad)" stroke-width="4" filter="url(#glow-cyan)" />
+    
+    <path d="M 175,200 L 145,185" stroke="url(#cyan-grad)" stroke-width="4" filter="url(#glow-cyan)" />
+    <circle cx="145" cy="185" r="8" fill="url(#cyan-grad)" filter="url(#glow-cyan)" />
+    
+    <path d="M 185,290 L 155,310" stroke="url(#cyan-grad)" stroke-width="4" filter="url(#glow-cyan)" />
+    <circle cx="155" cy="310" r="8" fill="url(#cyan-grad)" filter="url(#glow-cyan)" />
+
+    <!-- Right Hemisphere Circuit (Vibrant Cyan) -->
+    <!-- Inner brain loop -->
+    <path d="M 256,170 C 322,170 352,200 352,245 C 352,285 322,300 302,300 C 282,300 272,315 272,330" fill="none" stroke="url(#cyan-grad)" stroke-width="8" stroke-linecap="round" filter="url(#glow-cyan)" />
+    <!-- Outer brain loop -->
+    <path d="M 256,145 C 362,145 402,195 402,255 C 402,315 342,340 296,340" fill="none" stroke="url(#cyan-grad)" stroke-width="6" stroke-linecap="round" filter="url(#glow-cyan)" />
+    
+    <!-- Right Circuit Nodes & Connections -->
+    <line x1="352" y1="245" x2="382" y2="245" stroke="url(#cyan-grad)" stroke-width="4" filter="url(#glow-cyan)" />
+    <circle cx="382" cy="245" r="10" fill="#010a13" stroke="url(#cyan-grad)" stroke-width="4" filter="url(#glow-cyan)" />
+    
+    <path d="M 337,200 L 367,185" stroke="url(#cyan-grad)" stroke-width="4" filter="url(#glow-cyan)" />
+    <circle cx="367" cy="185" r="8" fill="url(#cyan-grad)" filter="url(#glow-cyan)" />
+    
+    <path d="M 327,290 L 357,310" stroke="url(#cyan-grad)" stroke-width="4" filter="url(#glow-cyan)" />
+    <circle cx="357" cy="310" r="8" fill="url(#cyan-grad)" filter="url(#glow-cyan)" />
+  </g>
+</svg>
