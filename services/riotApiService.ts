@@ -62,7 +62,7 @@ const CHAMPION_EASTER_EGGS: Record<string, { title: string; description: string 
     },
     Teemo: {
         title: 'Scout Code Detected',
-        description: 'Your map pressure leaves traps, tempo, and second thoughts in places opponents expected safety.',
+        description: 'You like to create map pressure by leaving mushrooms, tempo, and second thoughts in places opponents expected safety.',
     },
     Jhin: {
         title: 'Fourth Shot Finale',
@@ -77,39 +77,38 @@ const CHAMPION_EASTER_EGGS: Record<string, { title: string; description: string 
 export function clearCache(): Promise<void> {
     return clearAllCaches();
 }
-// 保持原有的辅助函数不变
 function tagToRegionalHost(tag: string): 'americas' | 'europe' | 'asia' | 'sea' | '' {
-  if (!tag) return '';
-  const t = tag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  if (t.startsWith('BR') || t.startsWith('LA') || t.startsWith('NA') || t.startsWith('OC')) {
-    return 'americas';
-  }
-  if (t.startsWith('EU') || t.startsWith('TR') || t.startsWith('RU')) {
-    return 'europe';
-  }
-  if (t.startsWith('KR') || t.startsWith('JP')) {
-    return 'asia';
-  }
-  if (t.startsWith('PH') || t.startsWith('SG') || t.startsWith('TH') || t.startsWith('TW') || t.startsWith('VN')) {
-    return 'sea';
-  }
-  if (t.startsWith('PBE')) {
-    return 'americas';
-  }
-  console.log('[tagToRegionalHost] No match for tag:', tag, '- returning empty string');
-  return '';
+    if (!tag) return '';
+    const t = tag.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    if (t.startsWith('BR') || t.startsWith('LA') || t.startsWith('NA') || t.startsWith('OC')) {
+        return 'americas';
+    }
+    if (t.startsWith('EU') || t.startsWith('TR') || t.startsWith('RU')) {
+        return 'europe';
+    }
+    if (t.startsWith('KR') || t.startsWith('JP')) {
+        return 'asia';
+    }
+    if (t.startsWith('PH') || t.startsWith('SG') || t.startsWith('TH') || t.startsWith('TW') || t.startsWith('VN')) {
+        return 'sea';
+    }
+    if (t.startsWith('PBE')) {
+        return 'americas';
+    }
+    console.log('[tagToRegionalHost] No match for tag:', tag, '- returning empty string');
+    return '';
 }
 
 // Helper function to extract region from match ID in path
 function extractRegionFromMatchId(pathname: string): string {
-  const matchIdMatch = pathname.match(/\/([A-Z]{2,3}\d?_\d+)$/);
-  if (matchIdMatch && matchIdMatch[1]) {
-    const matchId = matchIdMatch[1];
-    // 提取下划线前的区域前缀
-    const regionPrefix = matchId.split('_')[0];
-    return tagToRegionalHost(regionPrefix);
-  }
-  return '';
+    const matchIdMatch = pathname.match(/\/([A-Z]{2,3}\d?_\d+)$/);
+    if (matchIdMatch && matchIdMatch[1]) {
+        const matchId = matchIdMatch[1];
+        // 提取下划线前的区域前缀
+        const regionPrefix = matchId.split('_')[0];
+        return tagToRegionalHost(regionPrefix);
+    }
+    return '';
 }
 
 async function apiFetch<T>(url: string, gameName?: string, tagLine?: string, isMatchEndpoint: boolean = false): Promise<T> {
@@ -139,7 +138,7 @@ async function apiFetch<T>(url: string, gameName?: string, tagLine?: string, isM
             }
         }
     }
-    
+
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         if (response.status === 403) throw new Error("Forbidden: Check your Riot API key.");
@@ -161,37 +160,33 @@ async function getPuuid(gameName: string, tagLine: string): Promise<string> {
     // 这里改为 false，Account Endpoint 不再触发 setCachedRegion
     const data = await apiFetch<{ puuid: string }>(`${API_BASE_ACCOUNT}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`, gameName, tagLine, false);
     await setCachedPuuid(gameName, tagLine, data.puuid);
-    
+
     return data.puuid;
 }
 
-async function getMatchIds(puuid: string, gameName: string, tagLine: string): Promise<string[]> {
-    // Check multi-layer cache first
-    const cached = await getCachedMatchIds(puuid, undefined);
-    if (cached) {
-        return cached;
-    }
-    
-    const startOf2025Sec = Math.floor(Date.UTC(2025, 0, 1, 0, 0, 0) / 1000);
+async function getMatchIdPage(
+    puuid: string,
+    gameName: string,
+    tagLine: string,
+    start: number = 0,
+    count: number = 100,
+): Promise<{ ids: string[]; hasMore: boolean }> {
+    const startOf2026Sec = Math.floor(Date.UTC(2026, 0, 1, 0, 0, 0) / 1000);
 
     const base = `${API_BASE_MATCH}/lol/match/v5/matches/by-puuid/${puuid}/ids`;
     const params = new URLSearchParams({
-        start: '0',
-        count: '50',
-        startTime: String(startOf2025Sec),
+        start: String(start),
+        count: String(count),
+        startTime: String(startOf2026Sec),
     });
-    
-    const url = `${base}?${params.toString()}`;
-    console.log('[getMatchIds] params', Object.fromEntries(params.entries()));
-    
-    // 这里默认为 false (match list 不含具体的 matchId string 用于提取 region，且 response header 此时可能不准确或不需要)
-    const matchIds = await apiFetch<string[]>(url, gameName, tagLine, false);
-    
-    await setCachedMatchIds(puuid, undefined, matchIds);
-    console.log(`[getMatchIds] Fetched and cached ${matchIds.length} match IDs for ${puuid}`);
 
-    
-    return matchIds;
+    const url = `${base}?${params.toString()}`;
+    console.log(`[getMatchIdPage] Fetching page start=${start} count=${count}`);
+
+    const ids = await apiFetch<string[]>(url, gameName, tagLine, false);
+    console.log(`[getMatchIdPage] Got ${ids.length} match IDs (start=${start})`);
+
+    return { ids, hasMore: ids.length === count };
 }
 
 async function getMatchDetails(matchId: string, gameName: string, tagLine: string): Promise<MatchDto> {
@@ -201,11 +196,11 @@ async function getMatchDetails(matchId: string, gameName: string, tagLine: strin
         return cached;
     }
     await rateLimiter.waitForAvailability();
-    
+
     const response = await apiFetch<MatchDto>(`${API_BASE_MATCH}/lol/match/v5/matches/${matchId}`, gameName, tagLine, true);
-    
+
     await setCachedMatchDetails(matchId, response);
-    
+
     return response;
 }
 
@@ -299,7 +294,7 @@ function processSingleMatch(
     }
 ): void {
     const player = match.info!.participants.find(p => p.puuid === puuid)!;
-    
+
     // 记录 queueId 统计
     if (!stats.queueBreakdown[match.info!.queueId!]) {
         stats.queueBreakdown[match.info!.queueId!] = { games: 0, wins: 0 };
@@ -370,13 +365,13 @@ async function fetchMatches(
     tagLine: string
 ): Promise<{ matches: MatchDto[]; errors: number }> {
     console.log(`[fetchMatches] Starting to fetch ${matchIds.length} matches`);
-    
+
     // 使用 p-limit 控制并发数（5-10 个并发请求）
     const limit = pLimit(8);
     const errors: number[] = [];
-    
+
     // 并发获取所有 match details，但限制并发数
-    const matchPromises = matchIds.map((matchId, index) => 
+    const matchPromises = matchIds.map((matchId, index) =>
         limit(async () => {
             try {
                 const match = await getMatchDetails(matchId, gameName, tagLine);
@@ -395,12 +390,12 @@ async function fetchMatches(
 
     // 等待所有请求完成
     const results = await Promise.all(matchPromises);
-    
+
     // 过滤掉 null（错误情况）
     const matches = results.filter((m): m is MatchDto => m !== null);
-    
+
     console.log(`[fetchMatches] Completed: ${matches.length} matches fetched, ${errors.length} errors`);
-    
+
     return { matches, errors: errors.length };
 }
 
@@ -412,7 +407,7 @@ function filterMatches(
     puuid: string
 ): { validMatches: MatchDto[]; skipStats: { [key: string]: number } } {
     console.log(`[filterMatches] Filtering ${matches.length} matches`);
-    
+
     const skipStats: { [key: string]: number } = {};
     const validMatches: MatchDto[] = [];
     const queueIdDistribution: { [queueId: number]: number } = {};
@@ -423,7 +418,7 @@ function filterMatches(
             queueIdDistribution[match.info.queueId] = (queueIdDistribution[match.info.queueId] || 0) + 1;
         }
     }
-    
+
     console.log(`[filterMatches] Queue ID distribution:`, Object.entries(queueIdDistribution).map(([qid, count]) => ({
         queueId: Number(qid),
         queueName: QUEUE_NAMES[Number(qid)] || `Queue ${qid}`,
@@ -432,13 +427,13 @@ function filterMatches(
 
     for (const match of matches) {
         const filterResult = shouldProcessMatch(match, puuid);
-        
+
         if (filterResult.shouldProcess) {
             validMatches.push(match);
         } else {
             const reason = filterResult.reason || 'unknown';
             skipStats[reason] = (skipStats[reason] || 0) + 1;
-            
+
             // 详细日志：记录被跳过的匹配的 queueId
             if (filterResult.queueId !== undefined) {
                 const queueName = QUEUE_NAMES[filterResult.queueId] || `Queue ${filterResult.queueId}`;
@@ -455,7 +450,7 @@ function filterMatches(
     }
 
     console.log(`[filterMatches] Filtered: ${validMatches.length} valid matches, skip stats:`, skipStats);
-    
+
     // 如果 validMatches 为空，提供更详细的诊断信息
     if (validMatches.length === 0 && matches.length > 0) {
         const foundQueueIds = Object.keys(queueIdDistribution).map(Number);
@@ -467,7 +462,7 @@ function filterMatches(
             skipStats,
         });
     }
-    
+
     return { validMatches, skipStats };
 }
 
@@ -479,7 +474,7 @@ function aggregateMatches(
     puuid: string
 ): AggregatedStats {
     console.log(`[aggregateMatches] Aggregating ${matches.length} matches`);
-    
+
     const initialStats: AggregatedStats = {
         totalGames: 0, wins: 0, avgKills: 0, avgDeaths: 0, avgAssists: 0,
         avgVisionScorePerMin: 0, avgDamageDealtPerMin: 0, avgDamageDealtPercentage: 0,
@@ -517,7 +512,7 @@ function aggregateMatches(
     }
 
     console.log(`[aggregateMatches] Aggregated stats: ${initialStats.totalGames} games processed`);
-    
+
     return initialStats;
 }
 
@@ -533,10 +528,10 @@ async function fetchFilterAndAggregateMatches(
 ): Promise<{ stats: AggregatedStats; matches: MatchDto[]; skipStats: { [key: string]: number } }> {
     // Layer 1: Fetch - 只负责获取数据，不涉及业务逻辑
     const { matches: allMatches, errors } = await fetchMatches(matchIds, gameName, tagLine);
-    
+
     // Layer 2: Filter - 只负责过滤，不涉及聚合
     const { validMatches, skipStats } = filterMatches(allMatches, puuid);
-    
+
     // Layer 3: Aggregate - 只负责聚合，不涉及获取和过滤
     const stats = aggregateMatches(validMatches, puuid);
 
@@ -575,15 +570,15 @@ async function fetchFilterAndAggregateMatches(
 }
 
 function generateAnalysis(
-    stats: AggregatedStats, 
-    matches: MatchDto[], 
-    puuid: string, 
-    summonerName: string, 
+    stats: AggregatedStats,
+    matches: MatchDto[],
+    puuid: string,
+    summonerName: string,
     tag: string
 ): AnalysisResult {
     // Extract match data for table display
     const matchData: MatchData[] = [];
-    
+
     for (const match of matches) {
         if (!match.info) continue;
         const gameMode = match.info.gameMode || '';
@@ -592,7 +587,7 @@ function generateAnalysis(
 
         const player = match.info.participants.find(p => p.puuid === puuid);
         if (!player) continue;
-        
+
         matchData.push({
             matchId: match.metadata.matchId,
             gameEndTimestamp: match.info.gameEndTimestamp,
@@ -613,10 +608,10 @@ function generateAnalysis(
             gameMode: match.info.gameMode,
         });
     }
-    
+
     // Sort by most recent first
     matchData.sort((a, b) => b.gameEndTimestamp - a.gameEndTimestamp);
-    
+
     // Calculate aggregated summary
     const totalCS = matchData.reduce((sum, m) => sum + m.totalMinionsKilled, 0);
     const totalNeutralCS = matchData.reduce((sum, m) => sum + m.neutralMinionsKilled, 0);
@@ -625,7 +620,7 @@ function generateAnalysis(
     const totalVision = matchData.reduce((sum, m) => sum + m.visionScore, 0);
     const totalDuration = matchData.reduce((sum, m) => sum + m.gameDuration, 0);
     const wins = matchData.filter(m => m.win).length;
-    
+
     const aggregatedSummary: AggregatedSummary = {
         totalGames: stats.totalGames,
         wins: wins,
@@ -663,7 +658,7 @@ function generateAnalysis(
     if (strengths.length < 3) {
         strengths.push({ title: "Adaptable Playmaker", description: "You show flexibility, adapting to the needs of the game to secure victory.", icon: React.createElement(BrainCircuitIcon, { className: "w-8 h-8 text-[#CDA434]" }) });
     }
-    
+
     const topChampions: ChampionData[] = Object.entries(stats.championStats)
         .sort(([, a], [, b]) => b.games - a.games).slice(0, 3)
         .map(([name, champStats]) => {
@@ -741,16 +736,16 @@ function generateAnalysis(
 
     const archetypeMap: Record<string, { title: string, description: string }> = {
         'ENTJ': { title: "The Field Marshal", description: "A natural leader who commands the rift with strategic prowess and decisive action. You see the path to victory and rally your team to follow it." },
-        'INTJ': { title: "The Grandmaster", description: "A strategic visionary who outthinks the opponent. Your game is a complex chess match, and you're always five moves ahead."},
-        'ESTP': { title: "The Glorious Executioner", description: "An adrenaline junkie who thrives in the chaos of battle. You live for the outplay, turning skirmishes into a highlight reel."},
-        'ISTP': { title: "The Blade Master", description: "A mechanical virtuoso with lightning-fast reflexes. You excel in duels, dissecting opponents with cold, calculated precision."},
-        'ENFP': { title: "The Spark of Demacia", description: "An inspirational and creative force. You find unconventional paths to victory and energize your teammates with your optimistic plays."},
-        'INFP': { title: "The Dream Weaver", description: "A quiet but powerful playmaker who supports the team's dream. Your timely interventions and selfless plays are the unsung key to victory."},
-        'ESFJ': { title: "The Warden", description: "A protector at heart, you excel at enabling your teammates and shielding them from harm. Your presence ensures the team's core is safe."},
-        'ISFJ': { title: "The Unbreakable Shield", description: "A reliable and steadfast defender, you are the rock of your team. You consistently sacrifice for the greater good."},
+        'INTJ': { title: "The Grandmaster", description: "A strategic visionary who outthinks the opponent. Your game is a complex chess match, and you're always five moves ahead." },
+        'ESTP': { title: "The Glorious Executioner", description: "An adrenaline junkie who thrives in the chaos of battle. You live for the outplay, turning skirmishes into a highlight reel." },
+        'ISTP': { title: "The Blade Master", description: "A mechanical virtuoso with lightning-fast reflexes. You excel in duels, dissecting opponents with cold, calculated precision." },
+        'ENFP': { title: "The Spark of Demacia", description: "An inspirational and creative force. You find unconventional paths to victory and energize your teammates with your optimistic plays." },
+        'INFP': { title: "The Dream Weaver", description: "A quiet but powerful playmaker who supports the team's dream. Your timely interventions and selfless plays are the unsung key to victory." },
+        'ESFJ': { title: "The Warden", description: "A protector at heart, you excel at enabling your teammates and shielding them from harm. Your presence ensures the team's core is safe." },
+        'ISFJ': { title: "The Unbreakable Shield", description: "A reliable and steadfast defender, you are the rock of your team. You consistently sacrifice for the greater good." },
     };
-    
-    const randomArchetype = { title: "The Unseen Threat", description: "Your playstyle is a unique blend of strategies that keeps enemies guessing. You are an unpredictable and formidable force on the Rift."};
+
+    const randomArchetype = { title: "The Unseen Threat", description: "Your playstyle is a unique blend of strategies that keeps enemies guessing. You are an unpredictable and formidable force on the Rift." };
     const archetypeDetails = archetypeMap[mbti] || randomArchetype;
 
     return {
@@ -779,10 +774,22 @@ function generateAnalysis(
     };
 }
 
-// --- MAIN EXPORTED FUNCTION ---
-export const analyzePlayer = async (
+/**
+ * Progressive analysis handle — allows incremental loading of more matches.
+ */
+export interface AnalysisHandle {
+    result: AnalysisResult;
+    loadedMatchCount: number;
+    totalMatchIdsFound: number;
+    hasMore: boolean;
+    /** Fetch the next page of matches, merge, and return updated result. Returns null if no more. */
+    loadMore: () => Promise<AnalysisResult | null>;
+}
+
+// --- MAIN EXPORTED FUNCTION (progressive) ---
+export const analyzePlayerProgressive = async (
     summonerNameWithTag: string
-): Promise<AnalysisResult> => {
+): Promise<AnalysisHandle> => {
     const [gameName, tagLine] = summonerNameWithTag.split('#');
     if (!gameName || !tagLine) {
         throw new Error("Invalid format. Please use 'Summoner Name#Tag'.");
@@ -791,77 +798,132 @@ export const analyzePlayer = async (
     const puuid = await getPuuid(gameName, tagLine);
     console.log('[analyzePlayer] Resolved PUUID:', puuid, 'for', summonerNameWithTag);
 
-    // 获取所有匹配
-    const matchIds = await getMatchIds(puuid, gameName, tagLine);
-    console.log('[analyzePlayer] Found match IDs:', matchIds.length, matchIds);
-    
-    if (matchIds.length === 0) {
-        throw new Error(`No recent matches found. Try a different time range.`);
+    // State accumulated across pages
+    let allValidMatches: MatchDto[] = [];
+    let currentStart = 0;
+    let hasMore = true;
+    const PAGE_SIZE = 100;
+
+    // Fetch first page
+    const firstPage = await getMatchIdPage(puuid, gameName, tagLine, 0, PAGE_SIZE);
+    if (firstPage.ids.length === 0) {
+        throw new Error('No recent matches found for 2026. Try a different time range.');
     }
-    
-    // 三层架构：fetch -> filter -> aggregate（完全解耦）
-    const { stats: aggregatedStats, matches, skipStats } = await fetchFilterAndAggregateMatches(
-        matchIds,
-        gameName,
-        tagLine,
-        puuid
+    hasMore = firstPage.hasMore;
+    currentStart = firstPage.ids.length;
+
+    // Fetch, filter, aggregate first page
+    const { stats, matches: validMatches, skipStats } = await fetchFilterAndAggregateMatches(
+        firstPage.ids, gameName, tagLine, puuid
     );
-    
-    console.log('[analyzePlayer] Processed matches:', {
-        totalFetched: matchIds.length,
-        validMatches: aggregatedStats.totalGames,
+    allValidMatches = validMatches;
+
+    console.log('[analyzePlayer] First page processed:', {
+        totalFetched: firstPage.ids.length,
+        validMatches: stats.totalGames,
+        hasMore,
         skipStats,
     });
-    
-    if (aggregatedStats.totalGames < 5) {
+
+    if (stats.totalGames < 5) {
         const skipDetails = Object.entries(skipStats)
             .map(([reason, count]) => `${reason}: ${count}`)
             .join(', ');
         throw new Error(
-            `Only found ${aggregatedStats.totalGames} valid matches (min 5 required). ` +
+            `Only found ${stats.totalGames} valid matches (min 5 required). ` +
             `Skipped: ${skipDetails}. ` +
-            `Total matches fetched: ${matchIds.length}.`
+            `Total matches fetched: ${firstPage.ids.length}.`
         );
     }
-    
-    const analysis = generateAnalysis(aggregatedStats, matches, puuid, gameName, tagLine);
 
-    const roleDistribution = analysis.matchData.reduce<Record<string, number>>((acc, m) => {
-        acc[m.position || 'UNKNOWN'] = (acc[m.position || 'UNKNOWN'] || 0) + 1;
-        return acc;
-    }, {});
-    const topChampionRoles = analysis.matchData
-        .slice(0, 30)
-        .map(m => `${m.championName}:${m.position || 'UNKNOWN'}`);
+    // Build the initial analysis result
+    const buildResult = async (aggregatedStats: AggregatedStats, matches: MatchDto[]): Promise<AnalysisResult> => {
+        const analysis = generateAnalysis(aggregatedStats, matches, puuid, gameName, tagLine);
 
-    let winStreak = 0;
-    let lossStreak = 0;
-    let currentWin = 0;
-    let currentLoss = 0;
-    for (const m of [...analysis.matchData].reverse()) {
-        if (m.win) {
-            currentWin++;
-            currentLoss = 0;
-            winStreak = Math.max(winStreak, currentWin);
-        } else {
-            currentLoss++;
-            currentWin = 0;
-            lossStreak = Math.max(lossStreak, currentLoss);
+        const roleDistribution = analysis.matchData.reduce<Record<string, number>>((acc, m) => {
+            acc[m.position || 'UNKNOWN'] = (acc[m.position || 'UNKNOWN'] || 0) + 1;
+            return acc;
+        }, {});
+        const topChampionRoles = analysis.matchData
+            .slice(0, 30)
+            .map(m => `${m.championName}:${m.position || 'UNKNOWN'}`);
+
+        let winStreak = 0;
+        let lossStreak = 0;
+        let currentWin = 0;
+        let currentLoss = 0;
+        for (const m of [...analysis.matchData].reverse()) {
+            if (m.win) {
+                currentWin++;
+                currentLoss = 0;
+                winStreak = Math.max(winStreak, currentWin);
+            } else {
+                currentLoss++;
+                currentWin = 0;
+                lossStreak = Math.max(lossStreak, currentLoss);
+            }
         }
-    }
-    const monthlyData = analysis.growthCurve;
-    const playstylePatterns = [
-        `Avg DPM ${aggregatedStats.avgDamageDealtPerMin.toFixed(0)}`,
-        `Avg VPM ${aggregatedStats.avgVisionScorePerMin.toFixed(2)}`,
-        `Champion pool ${Object.keys(aggregatedStats.championStats).length}`,
-    ];
-    const playerId = `${gameName}#${tagLine}`;
-    analysis.aiInsights = await generateAIInsights(aggregatedStats, monthlyData, playerId, {
-        roleDistribution,
-        topChampionRoles,
-        winStreak,
-        lossStreak,
-        playstylePatterns,
-    });
-    return analysis;
+        const monthlyData = analysis.growthCurve;
+        const playstylePatterns = [
+            `Avg DPM ${aggregatedStats.avgDamageDealtPerMin.toFixed(0)}`,
+            `Avg VPM ${aggregatedStats.avgVisionScorePerMin.toFixed(2)}`,
+            `Champion pool ${Object.keys(aggregatedStats.championStats).length}`,
+        ];
+        const playerId = `${gameName}#${tagLine}`;
+        analysis.aiInsights = await generateAIInsights(aggregatedStats, monthlyData, playerId, {
+            roleDistribution,
+            topChampionRoles,
+            winStreak,
+            lossStreak,
+            playstylePatterns,
+        });
+        return analysis;
+    };
+
+    const initialResult = await buildResult(stats, allValidMatches);
+
+    // Build the loadMore closure
+    const loadMore = async (): Promise<AnalysisResult | null> => {
+        if (!hasMore) return null;
+
+        console.log(`[loadMore] Fetching next page at start=${currentStart}`);
+        const page = await getMatchIdPage(puuid, gameName, tagLine, currentStart, PAGE_SIZE);
+        if (page.ids.length === 0) {
+            hasMore = false;
+            return null;
+        }
+        hasMore = page.hasMore;
+        currentStart += page.ids.length;
+
+        // Fetch + filter the new page
+        const { matches: newValid } = await fetchFilterAndAggregateMatches(
+            page.ids, gameName, tagLine, puuid
+        );
+
+        // Merge with accumulated matches
+        allValidMatches = [...allValidMatches, ...newValid];
+
+        // Re-aggregate everything from scratch (fast, it's just in-memory number crunching)
+        const mergedStats = aggregateMatches(allValidMatches, puuid);
+        const updatedResult = await buildResult(mergedStats, allValidMatches);
+
+        console.log(`[loadMore] Updated: ${allValidMatches.length} total valid matches, hasMore=${hasMore}`);
+        return updatedResult;
+    };
+
+    return {
+        result: initialResult,
+        loadedMatchCount: allValidMatches.length,
+        totalMatchIdsFound: firstPage.ids.length,
+        hasMore,
+        loadMore,
+    };
+};
+
+// --- BACKWARD-COMPAT WRAPPER ---
+export const analyzePlayer = async (
+    summonerNameWithTag: string
+): Promise<AnalysisResult> => {
+    const handle = await analyzePlayerProgressive(summonerNameWithTag);
+    return handle.result;
 };

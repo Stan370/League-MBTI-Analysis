@@ -29,17 +29,13 @@ export async function analyzeMBTIFromMatches(
 ): Promise<MBTIAnalysisResult> {
   
   // 步骤1: 数据过滤 (150字段 → 20字段)
-  // 只处理 gameType === "MATCHED_GAME" 且 queueId 在允许范围内的比赛
+  // Skip TFT/Tutorial; allow all PvP queue types in ALLOWED_QUEUE_IDS
   const filtered: FilteredPlayerData[] = [];
   for (const match of matches) {
-    // 验证 gameType
-    if (!match.info || match.info.gameType !== "MATCHED_GAME") {
-      continue;
-    }
-    // 验证 queueId
-    if (!match.info.queueId || !ALLOWED_QUEUE_IDS.includes(match.info.queueId)) {
-      continue;
-    }
+    if (!match.info) continue;
+    const gameMode = match.info.gameMode || '';
+    if (['TFT', 'TUTORIAL'].includes(gameMode)) continue;
+    if (!match.info.queueId || !ALLOWED_QUEUE_IDS.includes(match.info.queueId)) continue;
     const data = extractPlayerData(match, puuid);
     if (data) {
       filtered.push(data);

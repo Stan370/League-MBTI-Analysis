@@ -1,17 +1,86 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import type { AnalysisResult } from '../types';
 import GrowthChart from './GrowthChart';
 import { QUEUE_NAMES, RANKED_QUEUE_IDS } from '../types/riotApiTypes';
+
+// ---------------------------------------------------------------------------
+// MBTI Storytelling — personalized, data-driven narrative for each dimension
+// ---------------------------------------------------------------------------
+
+/** Build a paragraph explaining WHY each MBTI letter was chosen, grounded in real stats */
+function buildMBTIDimensionStory(
+  letter: string,
+  pair: 'EI' | 'SN' | 'TF' | 'JP',
+  margin: number,
+  metrics: AnalysisResult['mbtiDetails']['metrics'],
+): { label: string; chosen: string; because: string; stat: string } {
+  const strength = Math.abs(margin) > 0.6 ? 'strongly' : Math.abs(margin) > 0.25 ? 'clearly' : 'slightly';
+
+  switch (pair) {
+    case 'EI':
+      return letter === 'E'
+        ? { label: 'Extrovert', chosen: 'E', because: `You ${strength} lean team-oriented — averaging ${metrics.assistsPerGame.toFixed(1)} assists/game and ${metrics.visionPerMin.toFixed(2)} vision/min shows you thrive in the teamfight chaos and live to set up plays for others.`, stat: `${metrics.assistsPerGame.toFixed(1)} assists/game` }
+        : { label: 'Introvert', chosen: 'I', because: `You ${strength} lean self-reliant — averaging ${metrics.killsPerGame.toFixed(1)} kills/game with ${metrics.damagePerMin.toFixed(0)} DPM, you prefer farming your lead and carrying through individual dominance over group plays.`, stat: `${metrics.killsPerGame.toFixed(1)} kills/game` };
+    case 'SN':
+      return letter === 'S'
+        ? { label: 'Sensing', chosen: 'S', because: `Your ${metrics.kda.toFixed(2)} KDA and ${metrics.deathsPerGame.toFixed(1)} deaths/game tell us you're a calculated player — you rarely overcommit and prefer consistent, stable execution over coin-flip plays.`, stat: `${metrics.kda.toFixed(2)} KDA` }
+        : { label: 'Intuitive', chosen: 'N', because: `With ${metrics.deathsPerGame.toFixed(1)} deaths/game and ${metrics.damagePerMin.toFixed(0)} DPM, you're willing to trade your safety for big moments — high-risk, high-reward is your language.`, stat: `${metrics.damagePerMin.toFixed(0)} DPM` };
+    case 'TF':
+      return letter === 'T'
+        ? { label: 'Thinking', chosen: 'T', because: `${metrics.damagePerMin.toFixed(0)} DPM and ${metrics.goldPerMin.toFixed(0)} gold/min — you treat the game as an efficiency puzzle: maximize resources, maximize output, emotion second.`, stat: `${metrics.goldPerMin.toFixed(0)} gold/min` }
+        : { label: 'Feeling', chosen: 'F', because: `${metrics.visionPerMin.toFixed(2)} vision/min and a ${(metrics.supportRate * 100).toFixed(0)}% support-role rate reveal your instinct to protect and enable your teammates, even at the cost of personal stats.`, stat: `${metrics.visionPerMin.toFixed(2)} vision/min` };
+    case 'JP':
+      return letter === 'J'
+        ? { label: 'Judging', chosen: 'J', because: `Your champion pool ratio of ${metrics.championPoolRatio.toFixed(2)} and focused role selection say you believe in mastery over breadth — pick the plan, execute the plan.`, stat: `${metrics.championPoolRatio.toFixed(2)} pool ratio` }
+        : { label: 'Perceiving', chosen: 'P', because: `A ${metrics.championPoolRatio.toFixed(2)} champion pool ratio and ${metrics.roleDiversityRatio.toFixed(2)} role diversity — you adapt to whatever the team needs. No two games look the same.`, stat: `${metrics.roleDiversityRatio.toFixed(2)} role diversity` };
+  }
+}
+
+/** Build a one-liner about their preferred game mode and how it reflects personality */
+function buildGameModePersonality(matchData: AnalysisResult['matchData']): string {
+  const modeCounts: Record<string, number> = {};
+  for (const m of matchData) {
+    const name = QUEUE_NAMES[m.queueId] || `Queue ${m.queueId}`;
+    modeCounts[name] = (modeCounts[name] || 0) + 1;
+  }
+  const sorted = Object.entries(modeCounts).sort((a, b) => b[1] - a[1]);
+  if (sorted.length === 0) return '';
+  const [topMode, topCount] = sorted[0];
+  const pct = ((topCount / matchData.length) * 100).toFixed(0);
+
+  const modeVibes: Record<string, string> = {
+    'Ranked Solo/Duo': 'You compete where it counts — the ranked ladder is your proving ground.',
+    'ARAM': "You're here for the brawl. Non-stop action, zero downtime, maximum chaos.",
+    'Arena': 'Arena is your playground — quick rounds, constant fighting, and creative builds.',
+    'Arena (16-player)': 'You thrive in the largest Arena lobbies where every round is a surprise.',
+    'Quickplay': 'Quickplay is your comfort zone — hop in, play your main, no strings attached.',
+    'Ranked Flex': 'Flex queue says you like the ranked stakes but prefer playing with friends.',
+    'Draft Pick': 'Draft pick shows you value strategy and preparation before the game even starts.',
+    'Blind Pick': 'Blind pick? You want action NOW. No bans, no waiting, just go.',
+    'ARURF': 'URF mode — you play League to press buttons as fast as humanly possible.',
+    'Pick URF': 'Pick URF — max speed, max damage, zero chill. This is your happy place.',
+    'One for All': 'One for All — you enjoy the memes and the unique chaos of 5 of the same champion.',
+    'Clash': 'Clash tournaments show you take coordinated competitive play seriously.',
+    'Swiftplay': 'Swiftplay — you want the Summoner\'s Rift experience, just... faster.',
+  };
+
+  const vibe = modeVibes[topMode] || `Your go-to mode is ${topMode}.`;
+  return `This year you have played ${matchData.length} games, and ${pct}% of them were ${topMode}. ${vibe}`;
+}
+
 
 interface ResultsPageProps {
   analysis: AnalysisResult;
   onReset: () => void;
   reportId?: string | null;
+  hasMore?: boolean;
+  loadedMatchCount?: number;
+  onLoadMore?: () => Promise<void>;
 }
 
 const Section: React.FC<{ title: string; children: React.ReactNode; className?: string; open?: boolean }> = ({ title, children, className = '', open = false }) => (
-  <div className={`w-full max-w-7xl mx-auto py-14 md:py-16 px-4 md:px-8 mb-10 ${open ? '' : 'panel-ambient backdrop-blur-md'} ${className}`}>
+  <div className={`w-full max-w-9xl mx-auto py-14 md:py-16 px-4 md:px-8 mb-10 ${open ? '' : 'panel-ambient backdrop-blur-md'} ${className}`}>
     <h2 className="font-rajdhani text-4xl md:text-5xl font-bold italic text-center md:text-left mb-10 uppercase tracking-[0.18em] text-gold-gradient text-glow-gold">{title}</h2>
     {children}
   </div>
@@ -20,8 +89,9 @@ const Section: React.FC<{ title: string; children: React.ReactNode; className?: 
 const cardBase = 'panel-ambient p-6 backdrop-blur-md';
 const statValue = 'font-mono font-semibold tracking-normal text-glow-cyan';
 
-const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }) => {
+const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, hasMore = false, loadedMatchCount, onLoadMore }) => {
   const [shareCopied, setShareCopied] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const handleShare = async () => {
     const shareUrl = reportId
@@ -52,6 +122,81 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }
       window.prompt('Copy this link:', shareUrl);
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // Share card as downloadable image (native Canvas 2D — no deps)
+  // ---------------------------------------------------------------------------
+  const shareCardRef = useRef<HTMLDivElement>(null);
+  const [downloadingCard, setDownloadingCard] = useState<'mbti' | 'year' | null>(null);
+
+  const handleDownloadMBTI = useCallback(async () => {
+    setDownloadingCard('mbti');
+    try {
+      const { renderMBTICard } = await import('../services/shareCardRenderer');
+      await renderMBTICard(analysis);
+    } catch (err) {
+      console.warn('[ShareCard] Failed to generate MBTI card:', err);
+      alert('Failed to generate image. Please try again.');
+    } finally {
+      setDownloadingCard(null);
+    }
+  }, [analysis]);
+
+  const handleDownloadYear = useCallback(async () => {
+    setDownloadingCard('year');
+    try {
+      const { renderYearCard } = await import('../services/shareCardRenderer');
+      await renderYearCard(analysis);
+    } catch (err) {
+      console.warn('[ShareCard] Failed to generate Year card:', err);
+      alert('Failed to generate image. Please try again.');
+    } finally {
+      setDownloadingCard(null);
+    }
+  }, [analysis]);
+
+  // ---------------------------------------------------------------------------
+  // Lazy load more matches (IntersectionObserver)
+  // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Manual load more matches on button click
+  // ---------------------------------------------------------------------------
+  const [visibleCount, setVisibleCount] = useState(30);
+
+  const handleLoadMoreClick = useCallback(async () => {
+    if (loadingMore) return;
+
+    // If there is more to fetch from the API and we need to fetch more
+    if (hasMore && onLoadMore) {
+      setLoadingMore(true);
+      try {
+        await onLoadMore();
+      } catch (err) {
+        console.warn('[ResultsPage] Failed to fetch more matches:', err);
+      } finally {
+        setLoadingMore(false);
+      }
+    }
+
+    setVisibleCount(prev => prev + 30);
+  }, [hasMore, onLoadMore, loadingMore]);
+
+  // ---------------------------------------------------------------------------
+  // MBTI dimension stories (memoized)
+  // ---------------------------------------------------------------------------
+  const mbtiStories = useMemo(() => {
+    const mbti = analysis.archetype.mbti;
+    const m = analysis.mbtiDetails;
+    return [
+      buildMBTIDimensionStory(mbti[0], 'EI', m.pairMargins.EI, m.metrics),
+      buildMBTIDimensionStory(mbti[1], 'SN', m.pairMargins.SN, m.metrics),
+      buildMBTIDimensionStory(mbti[2], 'TF', m.pairMargins.TF, m.metrics),
+      buildMBTIDimensionStory(mbti[3], 'JP', m.pairMargins.JP, m.metrics),
+    ];
+  }, [analysis]);
+
+  const gameModeStory = useMemo(() => buildGameModePersonality(analysis.matchData), [analysis.matchData]);
+
   // Helper function to calculate statistics from matches
   const calculateStats = (matches: typeof analysis.matchData) => {
     if (matches.length === 0) {
@@ -146,9 +291,11 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }
   const renderMatchTable = (matches: typeof analysis.matchData, title: string) => {
     if (matches.length === 0) return null;
 
+    const displayedMatches = matches.slice(0, visibleCount);
+
     // Check if any match in this section is ARAM
-    const hasARAM = matches.some(m => isARAM(m.queueId));
-    const hasNonARAM = matches.some(m => !isARAM(m.queueId));
+    const hasARAM = displayedMatches.some(m => isARAM(m.queueId));
+    const hasNonARAM = displayedMatches.some(m => !isARAM(m.queueId));
 
     // Determine which columns to show
     const showVision = hasNonARAM;
@@ -176,7 +323,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }
               </tr>
             </thead>
             <tbody>
-              {matches.map((match) => {
+              {displayedMatches.map((match) => {
                 const kda = (match.kills + match.assists) / (match.deaths || 1);
                 const totalCS = match.totalMinionsKilled + match.neutralMinionsKilled;
                 const date = new Date(match.gameEndTimestamp);
@@ -246,6 +393,34 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }
             </tbody>
           </table>
         </div>
+
+        {/* Load More Button specific to this table */}
+        {(hasMore || visibleCount < matches.length) && (
+          <div className="mt-4 text-center">
+            <button
+              onClick={handleLoadMoreClick}
+              disabled={loadingMore}
+              className="group relative inline-flex items-center gap-3 font-rajdhani text-lg font-bold uppercase tracking-[0.15em] text-[#F7D879] bg-transparent border border-[#F7D879]/50 hover:border-[#F7D879] px-6 py-3 transition-all duration-300 shadow-[0_0_15px_rgba(247,216,121,0.05)] hover:shadow-[0_0_30px_rgba(247,216,121,0.2)] hover:bg-[#F7D879]/5 disabled:opacity-50 disabled:cursor-wait"
+            >
+              {loadingMore ? (
+                <>
+                  <svg className="animate-spin h-5 w-5 text-[#F7D879]" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span>Fetching matches...</span>
+                </>
+              ) : (
+                <span>Load More Matches</span>
+              )}
+              {loadedMatchCount && (
+                <span className="font-mono text-sm text-cyan-300 border-l border-[#F7D879]/30 pl-3">
+                  {Math.min(visibleCount, matches.length)} / {matches.length} Shown
+                </span>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -265,7 +440,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }
         <h1 className="font-teko text-7xl md:text-9xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-gray-100 via-[#F7D879] to-gray-400 drop-shadow-[0_0_32px_rgba(45,137,155,0.28)]">{analysis.summonerName}</h1>
       </header>
 
-      <Section title={`${analysis.archetype.title} - ${analysis.archetype.mbti}`} className="relative overflow-visible">
+      <Section title={`${analysis.archetype.title} — ${analysis.archetype.mbti}`} className="relative overflow-visible">
         <div className="grid md:grid-cols-[0.84fr_1.16fr] gap-8 items-stretch">
           <div className="relative -mx-2 md:-ml-12 md:-mt-8 md:mb-[-2.5rem]">
             <div className="absolute -inset-4 bg-[#2D899B]/20 blur-3xl" />
@@ -273,18 +448,38 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }
             <div className="absolute -bottom-8 right-2 z-20 font-teko text-8xl md:text-9xl font-bold tracking-widest text-[#F7D879]/20">{analysis.archetype.mbti}</div>
           </div>
           <div className="relative z-20 bg-[#010A13]/58 p-6 md:p-8 border border-[#2D899B]/30 text-lg md:text-xl leading-8 text-gray-300 space-y-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
-            <p>{analysis.archetype.description}</p>
+            {/* Archetype + AI narrative */}
+            <p className="text-2xl font-semibold text-white">{analysis.archetype.description}</p>
             <p>{analysis.aiInsights.playstyle} {analysis.aiInsights.prediction}</p>
-            <p>
-              Your MBTI harness confidence is <span className={`${statValue} text-cyan-300`}>{(analysis.mbtiDetails.confidence * 100).toFixed(0)}%</span>, with
-              {' '}<span className={`${statValue} text-[#F7D879] text-glow-gold`}>{analysis.mbtiDetails.metrics.damagePerMin.toFixed(0)}</span> damage per minute,
-              {' '}<span className={`${statValue} text-[#F7D879] text-glow-gold`}>{analysis.mbtiDetails.metrics.visionPerMin.toFixed(2)}</span> vision per minute, and a
-              {' '}<span className={`${statValue} text-[#F7D879] text-glow-gold`}>{analysis.mbtiDetails.metrics.championPoolRatio.toFixed(2)}</span> champion pool ratio.
-            </p>
-            <p><span className="font-mono text-[#F7D879]">E/I:</span> {analysis.mbtiDetails.rules.EI}</p>
-            <p><span className="font-mono text-[#F7D879]">S/N:</span> {analysis.mbtiDetails.rules.SN}</p>
-            <p><span className="font-mono text-[#F7D879]">T/F:</span> {analysis.mbtiDetails.rules.TF}</p>
-            <p><span className="font-mono text-[#F7D879]">J/P:</span> {analysis.mbtiDetails.rules.JP}</p>
+
+            {/* Game mode personality */}
+            {gameModeStory && (
+              <p className="italic text-gray-400 border-l-2 border-[#F7D879]/40 pl-4">
+                {gameModeStory}
+              </p>
+            )}
+
+            {/* Confidence badge */}
+            <div className="flex items-center gap-3 bg-[#061527]/60 border border-[#2D899B]/25 px-4 py-3 rounded">
+              <span className="font-teko text-4xl font-bold text-[#F7D879] text-glow-gold">{(analysis.mbtiDetails.confidence * 100).toFixed(0)}%</span>
+              <span className="text-base text-gray-400">prediction confidence based on {analysis.aggregatedSummary.totalGames} games analyzed</span>
+            </div>
+
+            {/* Per-dimension breakdown — the story of WHY */}
+            <div className="space-y-4 mt-2">
+              <p className="font-rajdhani text-xl font-bold uppercase tracking-[0.12em] text-[#F7D879]/80">How We Read Your Playstyle</p>
+              {mbtiStories.map((dim, i) => (
+                <div key={i} className="flex gap-3 items-start">
+                  <span className="font-teko text-3xl font-bold text-cyan-300 text-glow-cyan w-8 shrink-0 text-center">{dim.chosen}</span>
+                  <div>
+                    <span className="font-rajdhani text-lg font-bold text-white uppercase tracking-wide">{dim.label}</span>
+                    <span className="mx-2 text-gray-600">·</span>
+                    <span className={`${statValue} text-[#F7D879] text-sm`}>{dim.stat}</span>
+                    <p className="text-base text-gray-400 mt-1 leading-relaxed">{dim.because}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </Section>
@@ -617,29 +812,84 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }
 
       {/* Shareable Card */}
       <Section title="Share Your Legend" open>
-        <div className="panel-ambient p-8 max-w-3xl mx-auto border-[#F7D879]/55">
-          <p className="text-center text-2xl text-gray-400">Your 2025 Season Story</p>
+        {/* --- Card container (captured for image download) --- */}
+        <div ref={shareCardRef} className="panel-ambient p-8 max-w-3xl mx-auto border-[#F7D879]/55" style={{ background: 'linear-gradient(145deg, #010A13 0%, #0A1428 50%, #061527 100%)' }}>
+          <p className="text-center text-lg text-gray-500 uppercase tracking-[0.2em] font-rajdhani">League MBTI Analytics</p>
           <h3 className="text-center font-teko text-6xl font-bold tracking-wider text-white mt-2">{analysis.summonerName}</h3>
-          <div className="mt-6 border-t border-[#F7D879]/45 pt-6 flex justify-around items-center text-center">
+          <p className="text-center text-gray-400 mt-1 font-mono">#{analysis.tag}</p>
+
+          {/* MBTI type highlight */}
+          <div className="mt-6 text-center">
+            <div className="inline-flex gap-2">
+              {analysis.archetype.mbti.split('').map((letter, i) => (
+                <span key={i} className="font-teko text-5xl font-bold text-[#F7D879] text-glow-gold bg-[#F7D879]/10 border border-[#F7D879]/30 w-14 h-14 flex items-center justify-center">
+                  {letter}
+                </span>
+              ))}
+            </div>
+            <p className="font-rajdhani text-2xl font-bold italic uppercase tracking-[0.1em] text-[#F7D879] text-glow-gold mt-3">{analysis.archetype.title}</p>
+          </div>
+
+          <div className="mt-6 border-t border-[#F7D879]/25 pt-6 grid grid-cols-3 gap-4 text-center">
             <div>
-              <p className="text-xl text-gray-400">Archetype</p>
-              <p className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.1em] text-[#F7D879] text-glow-gold">{analysis.archetype.title}</p>
-              <p className={`text-2xl text-cyan-300 ${statValue}`}>{analysis.archetype.mbti}</p>
+              <p className={`text-3xl text-cyan-300 ${statValue}`}>{analysis.aggregatedSummary.totalGames}</p>
+              <p className="text-sm text-gray-500">Games</p>
             </div>
             <div>
-              <p className="text-xl text-gray-400">Top Champion</p>
-              <p className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.1em] text-white">{analysis.topChampions[0].name}</p>
-              <p className={`text-2xl text-cyan-300 ${statValue}`}>{analysis.topChampions[0].winRate}% WR</p>
+              <p className={`text-3xl text-[#F7D879] text-glow-gold ${statValue}`}>{analysis.aggregatedSummary.winRate.toFixed(1)}%</p>
+              <p className="text-sm text-gray-500">Win Rate</p>
+            </div>
+            <div>
+              <p className={`text-3xl text-cyan-300 ${statValue}`}>{analysis.aggregatedSummary.avgKDA.toFixed(2)}</p>
+              <p className="text-sm text-gray-500">KDA</p>
             </div>
           </div>
+
+          <div className="mt-4 border-t border-[#2D899B]/20 pt-4 flex justify-around items-center text-center">
+            <div>
+              <p className="text-sm text-gray-500">Top Champion</p>
+              <p className="font-rajdhani text-2xl font-bold italic uppercase tracking-[0.1em] text-white">{analysis.topChampions[0]?.name}</p>
+              <p className={`text-lg text-cyan-300 ${statValue}`}>{analysis.topChampions[0]?.winRate}% WR</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Confidence</p>
+              <p className={`text-2xl text-[#F7D879] text-glow-gold ${statValue}`}>{(analysis.mbtiDetails.confidence * 100).toFixed(0)}%</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Role</p>
+              <p className="font-rajdhani text-2xl font-bold italic uppercase text-white">{analysis.recapStats.mostPlayedRole}</p>
+            </div>
+          </div>
+
+          <p className="text-center text-xs text-gray-600 mt-4">leaguembti.com · Discover your playstyle personality</p>
+        </div>
+
+        {/* --- Buttons below the card (NOT captured in screenshot) --- */}
+        <div className="max-w-3xl mx-auto mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
           <button
             onClick={handleShare}
-            className="mt-8 w-full font-rajdhani text-2xl font-bold uppercase tracking-[0.18em] text-[#010A13] bg-gradient-to-r from-[#8f6b24] via-[#F7D879] to-[#b98d2d] px-8 py-3 border border-[#F7D879] hover:bg-transparent hover:text-[#F7D879] transition-all duration-300"
+            className="font-rajdhani text-lg font-bold uppercase tracking-[0.12em] text-[#010A13] bg-gradient-to-r from-[#8f6b24] via-[#F7D879] to-[#b98d2d] px-4 py-3 border border-[#F7D879] hover:bg-transparent hover:text-[#F7D879] transition-all duration-300"
           >
-            {shareCopied ? '✓ Link Copied!' : 'Share'}
+            {shareCopied ? '✓ Link Copied!' : '🔗 Share Link'}
+          </button>
+          <button
+            onClick={handleDownloadMBTI}
+            disabled={downloadingCard !== null}
+            className="font-rajdhani text-lg font-bold uppercase tracking-[0.12em] text-[#F7D879] bg-transparent px-4 py-3 border border-[#F7D879] hover:bg-[#F7D879]/10 transition-all duration-300 disabled:opacity-50 disabled:cursor-wait"
+          >
+            {downloadingCard === 'mbti' ? '⏳ Generating...' : '📸 MBTI Card'}
+          </button>
+          <button
+            onClick={handleDownloadYear}
+            disabled={downloadingCard !== null}
+            className="font-rajdhani text-lg font-bold uppercase tracking-[0.12em] text-cyan-300 bg-transparent px-4 py-3 border border-[#2D899B] hover:bg-[#2D899B]/10 transition-all duration-300 disabled:opacity-50 disabled:cursor-wait"
+          >
+            {downloadingCard === 'year' ? '⏳ Generating...' : '📈 Year Stats Card'}
           </button>
         </div>
       </Section>
+
+
     </div>
   );
 };
