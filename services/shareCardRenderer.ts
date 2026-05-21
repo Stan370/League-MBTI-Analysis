@@ -284,7 +284,7 @@ export async function renderMBTICard(analysis: AnalysisResult): Promise<void> {
   }
 
   // Footer watermark
-  drawText(ctx, 'leaguembti.com · Discover your playstyle personality', CARD_W / 2, CARD_H - 60, {
+  drawText(ctx, 'https://league-mbti-analysis.pages.dev/ · Discover your playstyle personality', CARD_W / 2, CARD_H - 60, {
     font: '24px sans-serif', color: GRAY_600,
   });
 
@@ -306,7 +306,7 @@ export async function renderYearCard(analysis: AnalysisResult): Promise<void> {
   let y = 100;
 
   // Header
-  drawText(ctx, '#yearinlol #leaguembti', CARD_W - 80, y, {
+  drawText(ctx, '#2026inlol #leaguembti', CARD_W - 80, y, {
     font: 'bold 28px sans-serif', color: CYAN, align: 'right',
   });
   y += 40;
@@ -524,7 +524,7 @@ export async function renderYearCard(analysis: AnalysisResult): Promise<void> {
   }
 
   // Footer
-  drawText(ctx, 'leaguembti.com · Discover your playstyle personality', CARD_W / 2, CARD_H - 60, {
+  drawText(ctx, 'https://league-mbti-analysis.pages.dev/ · Discover your playstyle personality', CARD_W / 2, CARD_H - 60, {
     font: '24px sans-serif', color: GRAY_600,
   });
 

@@ -4,7 +4,7 @@ export interface YearInReview2025 {
   totalGames: number;
   totalHoursPlayed: number;
   winRate: number;
-  
+
   // Top 3 模式（最吸引人的展示方式）
   topChampions: Array<{
     name: string;
@@ -12,7 +12,7 @@ export interface YearInReview2025 {
     winRate: number;
     iconUrl: string;
   }>;
-  
+
   // 时间线趋势（按月聚合）
   monthlyProgress: Array<{
     month: string; // "2025-01", "2025-02"...
@@ -20,7 +20,7 @@ export interface YearInReview2025 {
     winRate: number;
     avgKDA: number;
   }>;
-  
+
   // 里程碑时刻（AI 生成的故事点）
   milestones: Array<{
     title: string; // "Your Breakthrough Moment"
@@ -28,7 +28,7 @@ export interface YearInReview2025 {
     matchId?: string;
     timestamp: number;
   }>;
-  
+
   // AI 生成的个性化洞察
   aiInsights: {
     playstyle: string; // "You evolved from a cautious player to an aggressive carry"

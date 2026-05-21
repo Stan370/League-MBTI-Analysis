@@ -93,6 +93,25 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
   const [shareCopied, setShareCopied] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // ---------------------------------------------------------------------------
+  // Soft paywall — shown before download; user can skip
+  // ---------------------------------------------------------------------------
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  const pendingDownloadRef = useRef<(() => Promise<void>) | null>(null);
+
+  const openPaywall = (actualDownload: () => Promise<void>) => {
+    pendingDownloadRef.current = actualDownload;
+    setPaywallVisible(true);
+  };
+
+  const proceedDownload = async () => {
+    setPaywallVisible(false);
+    if (pendingDownloadRef.current) {
+      await pendingDownloadRef.current();
+      pendingDownloadRef.current = null;
+    }
+  };
+
   const handleShare = async () => {
     const shareUrl = reportId
       ? `${window.location.origin}/report/${reportId}`
@@ -129,7 +148,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
   const shareCardRef = useRef<HTMLDivElement>(null);
   const [downloadingCard, setDownloadingCard] = useState<'mbti' | 'year' | null>(null);
 
-  const handleDownloadMBTI = useCallback(async () => {
+  const _doDownloadMBTI = useCallback(async () => {
     setDownloadingCard('mbti');
     try {
       const { renderMBTICard } = await import('../services/shareCardRenderer');
@@ -142,7 +161,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
     }
   }, [analysis]);
 
-  const handleDownloadYear = useCallback(async () => {
+  const _doDownloadYear = useCallback(async () => {
     setDownloadingCard('year');
     try {
       const { renderYearCard } = await import('../services/shareCardRenderer');
@@ -154,6 +173,10 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
       setDownloadingCard(null);
     }
   }, [analysis]);
+
+  // Exposed handlers: show paywall first, then run actual download
+  const handleDownloadMBTI = useCallback(() => openPaywall(_doDownloadMBTI), [_doDownloadMBTI]);
+  const handleDownloadYear = useCallback(() => openPaywall(_doDownloadYear), [_doDownloadYear]);
 
   // ---------------------------------------------------------------------------
   // Lazy load more matches (IntersectionObserver)
@@ -861,7 +884,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
             </div>
           </div>
 
-          <p className="text-center text-xs text-gray-600 mt-4">leaguembti.com · Discover your playstyle personality</p>
+          <p className="text-center text-xs text-gray-600 mt-4">league-mbti-analysis.pages.dev · Discover your playstyle personality</p>
         </div>
 
         {/* --- Buttons below the card (NOT captured in screenshot) --- */}
@@ -887,6 +910,66 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
             {downloadingCard === 'year' ? '⏳ Generating...' : '📈 Year Stats Card'}
           </button>
         </div>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Buy Me a Coffee soft-paywall modal                                  */}
+        {/* ------------------------------------------------------------------ */}
+        {paywallVisible && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+            style={{ background: 'rgba(1,10,19,0.88)', backdropFilter: 'blur(12px)' }}
+            onClick={(e) => { if (e.target === e.currentTarget) proceedDownload(); }}
+          >
+            <div
+              className="relative w-full max-w-md border border-[#F7D879]/40 shadow-[0_0_80px_rgba(247,216,121,0.18)] text-center"
+              style={{ background: 'linear-gradient(160deg,#061527 0%,#010A13 60%,#0a1a2e 100%)' }}
+            >
+              {/* gold top accent bar */}
+              <div className="h-1 w-full bg-gradient-to-r from-transparent via-[#F7D879] to-transparent" />
+
+              <div className="px-8 py-10">
+                {/* heading */}
+                <p className="font-rajdhani text-sm uppercase tracking-[0.25em] text-[#F7D879]/70 mb-1">Enjoying the analysis?</p>
+                <p className="text-base text-gray-400 leading-relaxed mb-8">
+                  If it made your day a little better, a small tip keeps the server alive.
+                </p>
+
+                {/* QR code */}
+                <div className="flex justify-center mb-6">
+                  <div className="p-3 bg-white rounded-2xl shadow-[0_0_40px_rgba(247,216,121,0.25)]">
+                    <img
+                      src="/qr-code.png"
+                      alt="Buy Me a Coffee QR code"
+                      className="w-44 h-44 object-contain"
+                    />
+                  </div>
+                </div>
+
+                {/* primary CTA */}
+                <a
+                  href="https://buymeacoffee.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={proceedDownload}
+                  className="block w-full font-rajdhani text-lg font-bold uppercase tracking-[0.15em] text-[#010A13] bg-gradient-to-r from-[#8f6b24] via-[#F7D879] to-[#b98d2d] py-4 shadow-[0_0_30px_rgba(247,216,121,0.25)] hover:shadow-[0_0_50px_rgba(247,216,121,0.4)] transition-all duration-300 mb-4"
+                >
+                  ☕ Support &amp; Download
+                </a>
+
+                {/* skip link */}
+                <button
+                  onClick={proceedDownload}
+                  className="text-sm text-gray-600 hover:text-gray-400 transition-colors duration-200 underline underline-offset-2"
+                >
+                  No thanks, just download
+                </button>
+              </div>
+
+              {/* subtle bottom rule */}
+              <div className="h-px w-full bg-gradient-to-r from-transparent via-[#2D899B]/40 to-transparent" />
+            </div>
+          </div>
+        )}
       </Section>
 
 
