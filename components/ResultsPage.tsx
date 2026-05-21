@@ -687,7 +687,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
           )}
 
           {/* Ranked Solo (Queue 420) Summary - Competitive Gamer Focus */}
-          {rankedSoloMatches.length > 0 && (
+          {/* {rankedSoloMatches.length > 0 && (
             <div className={`${cardBase} border-[#F7D879]/70 shadow-[0_0_50px_rgba(247,216,121,0.12)]`}>
               <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.14em] text-gold-gradient mb-2 text-center">Ranked Solo</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -743,7 +743,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
                 </div>
               </div>
             </div>
-          )}
+          )} */}
 
           {/* Casual Summary */}
           {casualMatches.length > 0 && (
