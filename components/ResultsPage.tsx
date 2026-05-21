@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { AnalysisResult } from '../types';
 import GrowthChart from './GrowthChart';
 import { QUEUE_NAMES, RANKED_QUEUE_IDS } from '../types/riotApiTypes';
@@ -7,16 +7,51 @@ import { QUEUE_NAMES, RANKED_QUEUE_IDS } from '../types/riotApiTypes';
 interface ResultsPageProps {
   analysis: AnalysisResult;
   onReset: () => void;
+  reportId?: string | null;
 }
 
-const Section: React.FC<{title: string; children: React.ReactNode; className?: string}> = ({ title, children, className = '' }) => (
-    <div className={`w-full max-w-7xl mx-auto py-16 px-4 md:px-8 bg-[#0A1428]/50 border border-[#2D899B]/30 backdrop-blur-sm mb-8 ${className}`}>
-        <h2 className="text-5xl font-bold text-center mb-12 uppercase tracking-widest text-[#CDA434]">{title}</h2>
-        {children}
-    </div>
+const Section: React.FC<{ title: string; children: React.ReactNode; className?: string; open?: boolean }> = ({ title, children, className = '', open = false }) => (
+  <div className={`w-full max-w-7xl mx-auto py-14 md:py-16 px-4 md:px-8 mb-10 ${open ? '' : 'panel-ambient backdrop-blur-md'} ${className}`}>
+    <h2 className="font-rajdhani text-4xl md:text-5xl font-bold italic text-center md:text-left mb-10 uppercase tracking-[0.18em] text-gold-gradient text-glow-gold">{title}</h2>
+    {children}
+  </div>
 );
 
-const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
+const cardBase = 'panel-ambient p-6 backdrop-blur-md';
+const statValue = 'font-mono font-semibold tracking-normal text-glow-cyan';
+
+const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId }) => {
+  const [shareCopied, setShareCopied] = useState(false);
+
+  const handleShare = async () => {
+    const shareUrl = reportId
+      ? `${window.location.origin}/report/${reportId}`
+      : window.location.href;
+
+    // Try Web Share API first (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${analysis.summonerName} — ${analysis.archetype.title} (${analysis.archetype.mbti})`,
+          text: `Check out my League MBTI personality!`,
+          url: shareUrl,
+        });
+        return;
+      } catch {
+        // User cancelled or API not supported, fall through to clipboard
+      }
+    }
+
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch {
+      // Last resort: prompt
+      window.prompt('Copy this link:', shareUrl);
+    }
+  };
   // Helper function to calculate statistics from matches
   const calculateStats = (matches: typeof analysis.matchData) => {
     if (matches.length === 0) {
@@ -72,7 +107,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
     const ranked: typeof analysis.matchData = [];
     const casual: typeof analysis.matchData = [];
     const rankedSolo: typeof analysis.matchData = [];
-    
+
     analysis.matchData.forEach(match => {
       if (RANKED_QUEUE_IDS.includes(match.queueId)) {
         ranked.push(match);
@@ -83,7 +118,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
         casual.push(match);
       }
     });
-    
+
     return { rankedMatches: ranked, casualMatches: casual, rankedSoloMatches: rankedSolo };
   }, [analysis.matchData]);
 
@@ -114,30 +149,30 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
     // Check if any match in this section is ARAM
     const hasARAM = matches.some(m => isARAM(m.queueId));
     const hasNonARAM = matches.some(m => !isARAM(m.queueId));
-    
+
     // Determine which columns to show
     const showVision = hasNonARAM;
     const showPosition = hasNonARAM;
 
     return (
       <div className="mb-8">
-        <h3 className="text-3xl font-bold text-[#CDA434] mb-4">{title}</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse bg-[#010A13]/70">
+        <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.16em] text-gold-gradient mb-4">{title}</h3>
+        <div className="overflow-x-auto border border-[#2D899B]/25 bg-[#010A13]/55 shadow-[0_20px_70px_rgba(0,0,0,0.32)]">
+          <table className="w-full border-collapse font-mono text-sm">
             <thead>
-              <tr className="border-b-2 border-[#CDA434]/50">
-                <th className="px-4 py-3 text-left text-[#CDA434] font-bold sticky left-0 bg-[#010A13]/95 z-10">Date</th>
-                <th className="px-4 py-3 text-left text-[#CDA434] font-bold sticky left-20 bg-[#010A13]/95 z-10">Champion</th>
-                <th className="px-4 py-3 text-center text-[#CDA434] font-bold">Game Type</th>
-                <th className="px-4 py-3 text-center text-[#CDA434] font-bold">Result</th>
-                <th className="px-4 py-3 text-center text-[#CDA434] font-bold">K/D/A</th>
-                <th className="px-4 py-3 text-center text-[#CDA434] font-bold">KDA</th>
-                <th className="px-4 py-3 text-center text-[#CDA434] font-bold">CS</th>
-                <th className="px-4 py-3 text-center text-[#CDA434] font-bold">Total CS</th>
-                <th className="px-4 py-3 text-center text-[#CDA434] font-bold">Damage</th>
-                <th className="px-4 py-3 text-center text-[#CDA434] font-bold">Gold</th>
-                {showVision && <th className="px-4 py-3 text-center text-[#CDA434] font-bold">Vision</th>}
-                {showPosition && <th className="px-4 py-3 text-center text-[#CDA434] font-bold">Position</th>}
+              <tr className="border-b border-[#CDA434]/45 bg-[#061527]/80 font-rajdhani text-sm uppercase tracking-[0.16em]">
+                <th className="px-4 py-3 text-left text-[#F7D879] font-bold sticky left-0 bg-[#061527]/95 z-10">Date</th>
+                <th className="px-4 py-3 text-left text-[#F7D879] font-bold sticky left-20 bg-[#061527]/95 z-10">Champion</th>
+                <th className="px-4 py-3 text-center text-[#F7D879] font-bold">Game Type</th>
+                <th className="px-4 py-3 text-center text-[#F7D879] font-bold">Result</th>
+                <th className="px-4 py-3 text-center text-[#F7D879] font-bold">K/D/A</th>
+                <th className="px-4 py-3 text-center text-[#F7D879] font-bold">KDA</th>
+                <th className="px-4 py-3 text-center text-[#F7D879] font-bold">CS</th>
+                <th className="px-4 py-3 text-center text-[#F7D879] font-bold">Total CS</th>
+                <th className="px-4 py-3 text-center text-[#F7D879] font-bold">Damage</th>
+                <th className="px-4 py-3 text-center text-[#F7D879] font-bold">Gold</th>
+                {showVision && <th className="px-4 py-3 text-center text-[#F7D879] font-bold">Vision</th>}
+                {showPosition && <th className="px-4 py-3 text-center text-[#F7D879] font-bold">Position</th>}
               </tr>
             </thead>
             <tbody>
@@ -148,18 +183,17 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
                 const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
                 const gameType = getGameTypeName(match.queueId);
                 const isAramMatch = isARAM(match.queueId);
-                
+
                 return (
-                  <tr 
-                    key={match.matchId} 
-                    className={`border-b border-[#2D899B]/20 hover:bg-[#0A1428]/50 transition-colors ${
-                      match.win ? 'bg-green-900/10' : 'bg-red-900/10'
-                    }`}
+                  <tr
+                    key={match.matchId}
+                    className={`border-b border-[#2D899B]/16 hover:bg-[#12315b]/45 transition-colors ${match.win ? 'bg-green-900/10' : 'bg-red-900/10'
+                      }`}
                   >
-                    <td className="px-4 py-3 text-gray-300 sticky left-0 bg-[#010A13]/95 z-10">{dateStr}</td>
-                    <td className="px-4 py-3 sticky left-20 bg-[#010A13]/95 z-10">
+                    <td className="px-4 py-3 text-gray-300 sticky left-0 bg-[#020d19]/95 z-10">{dateStr}</td>
+                    <td className="px-4 py-3 sticky left-20 bg-[#020d19]/95 z-10">
                       <div className="flex items-center gap-2">
-                        <img 
+                        <img
                           src={`https://ddragon.leagueoflegends.com/cdn/14.15.1/img/champion/${match.championName}.png`}
                           alt={match.championName}
                           className="w-8 h-8 rounded"
@@ -167,7 +201,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
                             (e.target as HTMLImageElement).src = 'https://ddragon.leagueoflegends.com/cdn/14.15.1/img/champion/Fiddlesticks.png';
                           }}
                         />
-                        <span className="text-white font-semibold">{match.championName}</span>
+                        <span className="font-space text-white font-semibold">{match.championName}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center text-blue-400 font-semibold">
@@ -181,7 +215,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
                     <td className="px-4 py-3 text-center text-white">
                       {match.kills}/{match.deaths}/{match.assists}
                     </td>
-                    <td className="px-4 py-3 text-center text-cyan-400 font-semibold">
+                    <td className="px-4 py-3 text-center text-cyan-300 font-semibold text-glow-cyan">
                       {kda.toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center text-gray-300">
@@ -217,48 +251,53 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
   };
 
   return (
-    <div className="min-h-screen p-4 pt-24 animate-fade-in">
-        <button 
-          onClick={onReset} 
-          className="fixed top-4 left-4 z-50 bg-[#CDA434] text-[#010A13] font-bold py-2 px-4 text-xl hover:bg-transparent hover:text-[#CDA434] border-2 border-[#CDA434] transition-all duration-300"
-        >
-            Analyze Another
-        </button>
+    <div className="min-h-screen p-4 pt-24 animate-fade-in font-space">
+      <button
+        onClick={onReset}
+        className="fixed top-4 left-4 z-50 border font-teko border-[#F7D879] bg-gradient-to-r from-[#8f6b24] via-[#F7D879] to-[#b98d2d] text-[#010A13] font-bold uppercase tracking-[0.12em] py-2 px-4 text-lg shadow-[0_0_28px_rgba(247,216,121,0.2)] hover:bg-transparent hover:text-[#F7D879] transition-all duration-300"
+      >
+        Analyze Another
+      </button>
 
       {/* Archetype Section */}
-      <header className="text-center mb-16">
-        <h1 className="text-6xl md:text-8xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-gray-100 to-gray-400">{analysis.summonerName}</h1>
+      <header className="relative mx-auto mb-14 max-w-7xl text-center">
+        <div className="absolute inset-x-10 top-1/2 -z-10 h-px bg-cyan-300/30 shadow-[0_0_44px_18px_rgba(34,211,238,0.13)]" />
+        <h1 className="font-teko text-7xl md:text-9xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-gray-100 via-[#F7D879] to-gray-400 drop-shadow-[0_0_32px_rgba(45,137,155,0.28)]">{analysis.summonerName}</h1>
       </header>
 
-      <Section title={`${analysis.archetype.title} - ${analysis.archetype.mbti}`}>
-        <div className="grid md:grid-cols-[0.9fr_1.1fr] gap-8 items-stretch">
-          <img src={analysis.archetype.imageUrl} alt={analysis.archetype.title} className="w-full h-full object-cover border-4 border-[#CDA434]/50" />
-          <div className="bg-[#010A13]/70 p-6 border border-[#2D899B]/30 text-xl leading-relaxed text-gray-300 space-y-5">
+      <Section title={`${analysis.archetype.title} - ${analysis.archetype.mbti}`} className="relative overflow-visible">
+        <div className="grid md:grid-cols-[0.84fr_1.16fr] gap-8 items-stretch">
+          <div className="relative -mx-2 md:-ml-12 md:-mt-8 md:mb-[-2.5rem]">
+            <div className="absolute -inset-4 bg-[#2D899B]/20 blur-3xl" />
+            <img src={analysis.archetype.imageUrl} alt={analysis.archetype.title} className="relative z-10 h-full min-h-96 w-full object-cover border border-[#F7D879]/45 shadow-[0_28px_90px_rgba(0,0,0,0.55)]" />
+            <div className="absolute -bottom-8 right-2 z-20 font-teko text-8xl md:text-9xl font-bold tracking-widest text-[#F7D879]/20">{analysis.archetype.mbti}</div>
+          </div>
+          <div className="relative z-20 bg-[#010A13]/58 p-6 md:p-8 border border-[#2D899B]/30 text-lg md:text-xl leading-8 text-gray-300 space-y-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
             <p>{analysis.archetype.description}</p>
             <p>{analysis.aiInsights.playstyle} {analysis.aiInsights.prediction}</p>
             <p>
-              Your MBTI harness confidence is <span className="font-bold text-cyan-400">{(analysis.mbtiDetails.confidence * 100).toFixed(0)}%</span>, with
-              {' '}<span className="text-[#CDA434]">{analysis.mbtiDetails.metrics.damagePerMin.toFixed(0)}</span> damage per minute,
-              {' '}<span className="text-[#CDA434]">{analysis.mbtiDetails.metrics.visionPerMin.toFixed(2)}</span> vision per minute, and a
-              {' '}<span className="text-[#CDA434]">{analysis.mbtiDetails.metrics.championPoolRatio.toFixed(2)}</span> champion pool ratio.
+              Your MBTI harness confidence is <span className={`${statValue} text-cyan-300`}>{(analysis.mbtiDetails.confidence * 100).toFixed(0)}%</span>, with
+              {' '}<span className={`${statValue} text-[#F7D879] text-glow-gold`}>{analysis.mbtiDetails.metrics.damagePerMin.toFixed(0)}</span> damage per minute,
+              {' '}<span className={`${statValue} text-[#F7D879] text-glow-gold`}>{analysis.mbtiDetails.metrics.visionPerMin.toFixed(2)}</span> vision per minute, and a
+              {' '}<span className={`${statValue} text-[#F7D879] text-glow-gold`}>{analysis.mbtiDetails.metrics.championPoolRatio.toFixed(2)}</span> champion pool ratio.
             </p>
-            <p><span className="text-[#CDA434]">E/I:</span> {analysis.mbtiDetails.rules.EI}</p>
-            <p><span className="text-[#CDA434]">S/N:</span> {analysis.mbtiDetails.rules.SN}</p>
-            <p><span className="text-[#CDA434]">T/F:</span> {analysis.mbtiDetails.rules.TF}</p>
-            <p><span className="text-[#CDA434]">J/P:</span> {analysis.mbtiDetails.rules.JP}</p>
+            <p><span className="font-mono text-[#F7D879]">E/I:</span> {analysis.mbtiDetails.rules.EI}</p>
+            <p><span className="font-mono text-[#F7D879]">S/N:</span> {analysis.mbtiDetails.rules.SN}</p>
+            <p><span className="font-mono text-[#F7D879]">T/F:</span> {analysis.mbtiDetails.rules.TF}</p>
+            <p><span className="font-mono text-[#F7D879]">J/P:</span> {analysis.mbtiDetails.rules.JP}</p>
           </div>
         </div>
       </Section>
 
-      <Section title="Together We Are Strong">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="md:row-span-2 bg-[#010A13]/70 border border-[#2D899B]/30 p-6">
-            <h3 className="text-3xl font-bold text-white mb-8">Objective Control</h3>
+      <Section title="Together We Are Strong" open>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 md:[&>*:nth-child(3)]:translate-y-8 md:[&>*:nth-child(5)]:-translate-y-5">
+          <div className={`md:row-span-2 ${cardBase}`}>
+            <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.12em] text-white mb-8">Objective Control</h3>
             <p className="text-2xl leading-relaxed text-gray-300">
-              You and your team secured <span className="font-bold text-white">{analysis.recapStats.totalTeamObjectives.toLocaleString()} objectives</span> this season.
+              You and your team secured <span className={`${statValue} text-white`}>{analysis.recapStats.totalTeamObjectives.toLocaleString()} objectives</span> this season.
             </p>
             <p className="text-2xl leading-relaxed text-gray-300 mt-8">
-              Your most played role was <span className="font-bold text-white">{analysis.recapStats.mostPlayedRole}</span>, with a champion pool of <span className="font-bold text-white">{analysis.recapStats.championPoolSize}</span>.
+              Your most played role was <span className="font-bold text-white">{analysis.recapStats.mostPlayedRole}</span>, with a champion pool of <span className={`${statValue} text-white`}>{analysis.recapStats.championPoolSize}</span>.
             </p>
           </div>
           {[
@@ -269,119 +308,125 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
             ['Inhibitors', analysis.recapStats.inhibitorKills, 'destroyed'],
             ['Takedowns', analysis.recapStats.totalTakedowns, 'total'],
           ].map(([label, value, suffix]) => (
-            <div key={label} className="bg-[#010A13]/70 border border-[#2D899B]/30 p-6 min-h-44">
-              <h3 className="text-3xl font-bold text-white mb-8">{label}</h3>
+            <div key={label} className={`${cardBase} min-h-44`}>
+              <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.1em] text-white mb-8">{label}</h3>
               <p className="text-xl text-gray-300">Team total</p>
-              <p className="text-4xl font-bold text-white mt-2">{Number(value).toLocaleString()} <span className="text-2xl font-normal">{suffix}</span></p>
+              <p className={`text-4xl text-white mt-2 ${statValue}`}>{Number(value).toLocaleString()} <span className="font-space text-2xl font-normal">{suffix}</span></p>
             </div>
           ))}
-          <div className="md:col-span-2 bg-[#010A13]/70 border border-[#2D899B]/30 p-6">
-            <h3 className="text-3xl font-bold text-white mb-6">Let Us Out</h3>
+          <div className={`md:col-span-2 ${cardBase}`}>
+            <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.1em] text-white mb-6">Let Us Out</h3>
             <p className="text-2xl leading-relaxed text-gray-300">
-              Your sample included <span className="font-bold text-white">{analysis.recapStats.shortGames}</span> games under 20 minutes.
+              Your sample included <span className={`${statValue} text-white`}>{analysis.recapStats.shortGames}</span> games under 20 minutes.
             </p>
           </div>
-          <div className="md:col-span-2 bg-[#010A13]/70 border border-[#2D899B]/30 p-6">
-            <h3 className="text-3xl font-bold text-white mb-6">Soulmate Match</h3>
+          <div className={`md:col-span-2 ${cardBase}`}>
+            <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.1em] text-white mb-6">Soulmate Match</h3>
             <div className="flex flex-col sm:flex-row gap-5 items-center">
-              <img src={analysis.recapStats.soulmate.imageUrl} alt={analysis.recapStats.soulmate.champions} className="w-full sm:w-48 h-32 object-cover border border-[#CDA434]/50" />
+              <img src={analysis.recapStats.soulmate.imageUrl} alt={analysis.recapStats.soulmate.champions} className="w-full sm:w-48 h-32 object-cover border border-[#F7D879]/50" />
               <div>
-                <p className="text-2xl font-bold text-[#CDA434]">{analysis.recapStats.soulmate.champions}</p>
+                <p className="font-rajdhani text-2xl font-bold uppercase tracking-[0.1em] text-[#F7D879] text-glow-gold">{analysis.recapStats.soulmate.champions}</p>
                 <p className="text-xl text-gray-300 mt-2">{analysis.recapStats.soulmate.description}</p>
                 <p className="text-lg text-gray-500 mt-2">{analysis.recapStats.soulmate.matchedBecause}</p>
               </div>
             </div>
           </div>
           {analysis.recapStats.easterEggs.map(egg => (
-            <div key={egg.champion} className="md:col-span-2 bg-[#010A13]/70 border border-[#CDA434]/40 p-6">
-              <h3 className="text-3xl font-bold text-white mb-6">{egg.title}</h3>
+            <div key={egg.champion} className={`md:col-span-2 ${cardBase} border-[#F7D879]/40`}>
+              <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.1em] text-white mb-6">{egg.title}</h3>
               <div className="flex flex-col sm:flex-row gap-5 items-center">
-                <img src={egg.imageUrl} alt={egg.champion} className="w-full sm:w-48 h-32 object-cover border border-[#CDA434]/50" />
+                <img src={egg.imageUrl} alt={egg.champion} className="w-full sm:w-48 h-32 object-cover border border-[#F7D879]/50" />
                 <p className="text-2xl leading-relaxed text-gray-300">{egg.description}</p>
               </div>
             </div>
           ))}
         </div>
       </Section>
-      
-      {/* Strengths Section */}
-      <Section title="Core Strengths">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {analysis.strengths.map((strength, index) => (
-                <div key={index} className="bg-[#010A13]/70 p-6 border border-[#CDA434]/30 text-center">
-                    <div className="flex justify-center mb-4">{strength.icon}</div>
-                    <h3 className="text-3xl font-semibold text-[#CDA434] mb-2">{strength.title}</h3>
-                    <p className="text-xl text-gray-400">{strength.description}</p>
-                </div>
-            ))}
-        </div>
-      </Section>
 
-      {/* Growth Curve Section */}
-      <Section title="Your Growth Curve">
-          <div className="h-96">
-            <GrowthChart data={analysis.growthCurve} />
+      {/* Strengths and Growth Section */}
+      <Section title="Identity Signal" open>
+        <div className="grid grid-cols-1 lg:grid-cols-[0.36fr_0.64fr] gap-8 items-start">
+          <div>
+            <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.16em] text-gold-gradient mb-5">Core Strengths</h3>
+            <div className="space-y-5">
+              {analysis.strengths.map((strength, index) => (
+                <div key={index} className={`${cardBase} text-left`}>
+                  <div className="mb-4 text-[#F7D879]">{strength.icon}</div>
+                  <h4 className="font-rajdhani text-2xl font-bold italic uppercase tracking-[0.12em] text-[#F7D879] text-glow-gold mb-2">{strength.title}</h4>
+                  <p className="text-base leading-7 text-gray-400">{strength.description}</p>
+                </div>
+              ))}
+            </div>
           </div>
+          <div className="lg:pt-16">
+            <div className={`${cardBase} p-5 md:p-7`}>
+              <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.16em] text-gold-gradient mb-6">Your Growth Curve</h3>
+              <div className="h-[28rem]">
+                <GrowthChart data={analysis.growthCurve} />
+              </div>
+            </div>
+          </div>
+        </div>
       </Section>
 
       {/* Top Champions Section */}
-      <Section title="Champion Mastery">
+      <Section title="Champion Mastery" className="md:ml-auto md:mr-[6vw]">
         <div className="space-y-8">
-            {analysis.topChampions.map(champ => (
-                <div key={champ.name} className="flex flex-col md:flex-row items-center gap-6 bg-[#010A13]/70 p-6 border border-[#2D899B]/20">
-                    <img src={champ.imageUrl} alt={champ.name} className="w-24 h-24 border-2 border-[#CDA434]"/>
-                    <div className="flex-1 text-center md:text-left">
-                        <h3 className="text-4xl font-bold text-white">{champ.name}</h3>
-                        <p className="text-xl text-gray-400">{champ.playstyleAnalysis}</p>
-                    </div>
-                    <div className="flex gap-4 md:gap-8 text-center">
-                        <div>
-                            <p className="text-3xl font-bold text-cyan-400">{champ.gamesPlayed}</p>
-                            <p className="text-lg text-gray-500">Games</p>
-                        </div>
-                        <div>
-                            <p className="text-3xl font-bold text-cyan-400">{champ.winRate}%</p>
-                            <p className="text-lg text-gray-500">Winrate</p>
-                        </div>
-                        <div>
-                            <p className="text-2xl font-bold text-cyan-400">{champ.kda.split('/')[0].trim()}</p>
-                            <p className="text-lg text-gray-500">KDA</p>
-                        </div>
-                    </div>
+          {analysis.topChampions.map(champ => (
+            <div key={champ.name} className="flex flex-col md:flex-row items-center gap-6 bg-[#010A13]/52 p-6 border border-[#2D899B]/20 shadow-[0_20px_70px_rgba(0,0,0,0.28)]">
+              <img src={champ.imageUrl} alt={champ.name} className="w-24 h-24 border border-[#F7D879] shadow-[0_0_22px_rgba(247,216,121,0.18)]" />
+              <div className="flex-1 text-center md:text-left">
+                <h3 className="font-rajdhani text-4xl font-bold italic uppercase tracking-[0.1em] text-white">{champ.name}</h3>
+                <p className="text-xl text-gray-400">{champ.playstyleAnalysis}</p>
+              </div>
+              <div className="flex gap-4 md:gap-8 text-center">
+                <div>
+                  <p className={`text-3xl text-cyan-300 ${statValue}`}>{champ.gamesPlayed}</p>
+                  <p className="text-lg text-gray-500">Games</p>
                 </div>
-            ))}
+                <div>
+                  <p className={`text-3xl text-cyan-300 ${statValue}`}>{champ.winRate}%</p>
+                  <p className="text-lg text-gray-500">Winrate</p>
+                </div>
+                <div>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{champ.kda.split('/')[0].trim()}</p>
+                  <p className="text-lg text-gray-500">KDA</p>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </Section>
 
-       {/* Match Data Table Section */}
-      <Section title="Match History & Statistics">
+      {/* Match Data Table Section */}
+      <Section title="Match History">
         <div className="space-y-8">
           {/* Overall Summary */}
-          <div className="bg-[#010A13]/70 p-6 border border-[#CDA434]/30">
-            <h3 className="text-3xl font-bold text-[#CDA434] mb-6 text-center">Overall Summary</h3>
+          <div className={`${cardBase}`}>
+            <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.14em] text-gold-gradient mb-6 text-center">Overall Summary</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               <div className="text-center">
-                <p className="text-2xl font-bold text-cyan-400">{analysis.aggregatedSummary.totalGames}</p>
+                <p className={`text-2xl text-cyan-300 ${statValue}`}>{analysis.aggregatedSummary.totalGames}</p>
                 <p className="text-sm text-gray-400">Total Games</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-green-400">{analysis.aggregatedSummary.wins}</p>
+                <p className={`text-2xl text-green-300 ${statValue}`}>{analysis.aggregatedSummary.wins}</p>
                 <p className="text-sm text-gray-400">Wins</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-yellow-400">{analysis.aggregatedSummary.winRate.toFixed(1)}%</p>
+                <p className={`text-2xl text-[#F7D879] text-glow-gold ${statValue}`}>{analysis.aggregatedSummary.winRate.toFixed(1)}%</p>
                 <p className="text-sm text-gray-400">Win Rate</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-cyan-400">{analysis.aggregatedSummary.avgKDA.toFixed(2)}</p>
+                <p className={`text-2xl text-cyan-300 ${statValue}`}>{analysis.aggregatedSummary.avgKDA.toFixed(2)}</p>
                 <p className="text-sm text-gray-400">Avg KDA</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-cyan-400">{analysis.aggregatedSummary.avgTotalCS.toFixed(1)}</p>
+                <p className={`text-2xl text-cyan-300 ${statValue}`}>{analysis.aggregatedSummary.avgTotalCS.toFixed(1)}</p>
                 <p className="text-sm text-gray-400">Avg Total CS</p>
               </div>
               <div className="text-center">
-                <p className="text-2xl font-bold text-cyan-400">{analysis.aggregatedSummary.avgDamagePerMin.toFixed(0)}</p>
+                <p className={`text-2xl text-cyan-300 ${statValue}`}>{analysis.aggregatedSummary.avgDamagePerMin.toFixed(0)}</p>
                 <p className="text-sm text-gray-400">Dmg/Min</p>
               </div>
             </div>
@@ -389,31 +434,31 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
 
           {/* Ranked Summary */}
           {rankedMatches.length > 0 && (
-            <div className="bg-[#010A13]/70 p-6 border border-[#CDA434]/30">
-              <h3 className="text-3xl font-bold text-[#CDA434] mb-6 text-center">Ranked Matches Statistics</h3>
+            <div className={`${cardBase}`}>
+              <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.14em] text-gold-gradient mb-6 text-center">Ranked Statistics</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{rankedStats.totalGames}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{rankedStats.totalGames}</p>
                   <p className="text-sm text-gray-400">Total Games</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-green-400">{rankedStats.wins}</p>
+                  <p className={`text-2xl text-green-300 ${statValue}`}>{rankedStats.wins}</p>
                   <p className="text-sm text-gray-400">Wins</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-yellow-400">{rankedStats.winRate.toFixed(1)}%</p>
+                  <p className={`text-2xl text-[#F7D879] text-glow-gold ${statValue}`}>{rankedStats.winRate.toFixed(1)}%</p>
                   <p className="text-sm text-gray-400">Win Rate</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{rankedStats.avgKDA.toFixed(2)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{rankedStats.avgKDA.toFixed(2)}</p>
                   <p className="text-sm text-gray-400">Avg KDA</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{rankedStats.avgTotalCS.toFixed(1)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{rankedStats.avgTotalCS.toFixed(1)}</p>
                   <p className="text-sm text-gray-400">Avg Total CS</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{rankedStats.avgDamagePerMin.toFixed(0)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{rankedStats.avgDamagePerMin.toFixed(0)}</p>
                   <p className="text-sm text-gray-400">Dmg/Min</p>
                 </div>
               </div>
@@ -448,31 +493,31 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
 
           {/* Ranked Solo (Queue 420) Summary - Competitive Gamer Focus */}
           {rankedSoloMatches.length > 0 && (
-            <div className="bg-[#010A13]/70 p-6 border-2 border-[#CDA434]">
-              <h3 className="text-3xl font-bold text-[#CDA434] mb-2 text-center">Ranked Solo</h3>
+            <div className={`${cardBase} border-[#F7D879]/70 shadow-[0_0_50px_rgba(247,216,121,0.12)]`}>
+              <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.14em] text-gold-gradient mb-2 text-center">Ranked Solo</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{rankedSoloStats.totalGames}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{rankedSoloStats.totalGames}</p>
                   <p className="text-sm text-gray-400">Total Games</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-green-400">{rankedSoloStats.wins}</p>
+                  <p className={`text-2xl text-green-300 ${statValue}`}>{rankedSoloStats.wins}</p>
                   <p className="text-sm text-gray-400">Wins</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-yellow-400">{rankedSoloStats.winRate.toFixed(1)}%</p>
+                  <p className={`text-2xl text-[#F7D879] text-glow-gold ${statValue}`}>{rankedSoloStats.winRate.toFixed(1)}%</p>
                   <p className="text-sm text-gray-400">Win Rate</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{rankedSoloStats.avgKDA.toFixed(2)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{rankedSoloStats.avgKDA.toFixed(2)}</p>
                   <p className="text-sm text-gray-400">Avg KDA</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{rankedSoloStats.avgTotalCS.toFixed(1)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{rankedSoloStats.avgTotalCS.toFixed(1)}</p>
                   <p className="text-sm text-gray-400">Avg Total CS</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{rankedSoloStats.avgDamagePerMin.toFixed(0)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{rankedSoloStats.avgDamagePerMin.toFixed(0)}</p>
                   <p className="text-sm text-gray-400">Dmg/Min</p>
                 </div>
               </div>
@@ -507,31 +552,31 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
 
           {/* Casual Summary */}
           {casualMatches.length > 0 && (
-            <div className="bg-[#010A13]/70 p-6 border border-[#CDA434]/30">
-              <h3 className="text-3xl font-bold text-[#CDA434] mb-6 text-center">Casual Matches Statistics</h3>
+            <div className={`${cardBase}`}>
+              <h3 className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.14em] text-gold-gradient mb-6 text-center">Casual Statistics</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{casualStats.totalGames}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{casualStats.totalGames}</p>
                   <p className="text-sm text-gray-400">Total Games</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-green-400">{casualStats.wins}</p>
+                  <p className={`text-2xl text-green-300 ${statValue}`}>{casualStats.wins}</p>
                   <p className="text-sm text-gray-400">Wins</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-yellow-400">{casualStats.winRate.toFixed(1)}%</p>
+                  <p className={`text-2xl text-[#F7D879] text-glow-gold ${statValue}`}>{casualStats.winRate.toFixed(1)}%</p>
                   <p className="text-sm text-gray-400">Win Rate</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{casualStats.avgKDA.toFixed(2)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{casualStats.avgKDA.toFixed(2)}</p>
                   <p className="text-sm text-gray-400">Avg KDA</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{casualStats.avgTotalCS.toFixed(1)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{casualStats.avgTotalCS.toFixed(1)}</p>
                   <p className="text-sm text-gray-400">Avg Total CS</p>
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-cyan-400">{casualStats.avgDamagePerMin.toFixed(0)}</p>
+                  <p className={`text-2xl text-cyan-300 ${statValue}`}>{casualStats.avgDamagePerMin.toFixed(0)}</p>
                   <p className="text-sm text-gray-400">Dmg/Min</p>
                 </div>
               </div>
@@ -571,25 +616,28 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset }) => {
       </Section>
 
       {/* Shareable Card */}
-      <Section title="Share Your Legend">
-        <div className="bg-gradient-to-br from-[#0A1428] to-[#010A13] border-2 border-[#CDA434] p-8 max-w-3xl mx-auto">
-            <p className="text-center text-2xl text-gray-400">Your 2025 Season Story</p>
-            <h3 className="text-center text-5xl font-bold text-white mt-2">{analysis.summonerName}</h3>
-            <div className="mt-6 border-t-2 border-[#CDA434]/50 pt-6 flex justify-around items-center text-center">
-                <div>
-                    <p className="text-xl text-gray-400">Archetype</p>
-                    <p className="text-3xl font-bold text-[#CDA434]">{analysis.archetype.title}</p>
-                    <p className="text-2xl text-cyan-400">{analysis.archetype.mbti}</p>
-                </div>
-                <div>
-                     <p className="text-xl text-gray-400">Top Champion</p>
-                    <p className="text-3xl font-bold text-white">{analysis.topChampions[0].name}</p>
-                    <p className="text-2xl text-cyan-400">{analysis.topChampions[0].winRate}% WR</p>
-                </div>
+      <Section title="Share Your Legend" open>
+        <div className="panel-ambient p-8 max-w-3xl mx-auto border-[#F7D879]/55">
+          <p className="text-center text-2xl text-gray-400">Your 2025 Season Story</p>
+          <h3 className="text-center font-teko text-6xl font-bold tracking-wider text-white mt-2">{analysis.summonerName}</h3>
+          <div className="mt-6 border-t border-[#F7D879]/45 pt-6 flex justify-around items-center text-center">
+            <div>
+              <p className="text-xl text-gray-400">Archetype</p>
+              <p className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.1em] text-[#F7D879] text-glow-gold">{analysis.archetype.title}</p>
+              <p className={`text-2xl text-cyan-300 ${statValue}`}>{analysis.archetype.mbti}</p>
             </div>
-            <button className="mt-8 w-full text-2xl font-bold uppercase tracking-widest text-[#010A13] bg-[#CDA434] px-8 py-3 border-2 border-[#CDA434] hover:bg-transparent hover:text-[#CDA434] transition-all duration-300">
-                Share
-            </button>
+            <div>
+              <p className="text-xl text-gray-400">Top Champion</p>
+              <p className="font-rajdhani text-3xl font-bold italic uppercase tracking-[0.1em] text-white">{analysis.topChampions[0].name}</p>
+              <p className={`text-2xl text-cyan-300 ${statValue}`}>{analysis.topChampions[0].winRate}% WR</p>
+            </div>
+          </div>
+          <button
+            onClick={handleShare}
+            className="mt-8 w-full font-rajdhani text-2xl font-bold uppercase tracking-[0.18em] text-[#010A13] bg-gradient-to-r from-[#8f6b24] via-[#F7D879] to-[#b98d2d] px-8 py-3 border border-[#F7D879] hover:bg-transparent hover:text-[#F7D879] transition-all duration-300"
+          >
+            {shareCopied ? '✓ Link Copied!' : 'Share'}
+          </button>
         </div>
       </Section>
     </div>

@@ -1,18 +1,108 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import LandingPage from './components/LandingPage';
 import LoadingScreen from './components/LoadingScreen';
 import ResultsPage from './components/ResultsPage';
 import { analyzePlayer } from './services/riotApiService';
 import { analyzePlayerMock } from './services/mockAnalyticsService';
 import type { AnalysisResult } from './types';
+import {
+  toSerializableReport,
+  fromSerializableReport,
+  saveReport,
+  loadReport,
+  getEmbeddedReport,
+} from './services/reportService';
+
+type View = 'landing' | 'loading' | 'results' | 'loading-report';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'landing' | 'loading' | 'results'>('landing');
+  const [view, setView] = useState<View>('landing');
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summonerName, setSummonerName] = useState<string>('');
+  const [reportId, setReportId] = useState<string | null>(null);
 
+  // ---------------------------------------------------------------------------
+  // On mount: check for SSR-embedded data or /report/{id} in the URL
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    // Priority 1: SSR-embedded report JSON (injected by functions/report/[id].ts)
+    const embedded = getEmbeddedReport();
+    if (embedded) {
+      const result = fromSerializableReport(embedded);
+      setAnalysis(result);
+      setSummonerName(embedded.summonerName);
+      setReportId(embedded.id);
+      setView('results');
+      return;
+    }
+
+    // Priority 2: URL path /report/{id} — fetch from KV API
+    const match = window.location.pathname.match(/^\/report\/([a-f0-9]+)$/i);
+    if (match) {
+      const id = match[1];
+      setView('loading-report');
+      loadReport(id)
+        .then((report) => {
+          if (report) {
+            const result = fromSerializableReport(report);
+            setAnalysis(result);
+            setSummonerName(report.summonerName);
+            setReportId(report.id);
+            setView('results');
+          } else {
+            setError('Report not found. It may have expired.');
+            setView('landing');
+            window.history.replaceState({}, '', '/');
+          }
+        })
+        .catch(() => {
+          setError('Failed to load report.');
+          setView('landing');
+          window.history.replaceState({}, '', '/');
+        });
+      return;
+    }
+
+    // Priority 3: landing page (default)
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Handle browser back/forward navigation
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const handlePopState = () => {
+      const match = window.location.pathname.match(/^\/report\/([a-f0-9]+)$/i);
+      if (match) {
+        // User navigated back to a report URL
+        const id = match[1];
+        if (reportId === id && analysis) return; // Already showing this report
+        setView('loading-report');
+        loadReport(id)
+          .then((report) => {
+            if (report) {
+              setAnalysis(fromSerializableReport(report));
+              setSummonerName(report.summonerName);
+              setReportId(report.id);
+              setView('results');
+            } else {
+              handleReset();
+            }
+          })
+          .catch(() => handleReset());
+      } else {
+        // Back to landing
+        handleReset();
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [reportId, analysis]);
+
+  // ---------------------------------------------------------------------------
+  // Analysis flow (unchanged logic, now saves to KV at the end)
+  // ---------------------------------------------------------------------------
   const handleAnalysis = async (summoner: string, useMock: boolean) => {
     if (!useMock && (!summoner.trim() || !summoner.includes('#'))) {
         setError('Please enter a valid Summoner Name#Tag for live analysis.');
@@ -27,6 +117,18 @@ const App: React.FC = () => {
         : await analyzePlayer(summoner);
         
       setAnalysis(result);
+
+      // Save to KV for sharing
+      try {
+        const serializable = toSerializableReport(result, ''); // ID will be assigned server-side
+        const { id } = await saveReport(serializable);
+        setReportId(id);
+        window.history.pushState({}, '', `/report/${id}`);
+      } catch (saveErr) {
+        console.warn('[App] Failed to save report to KV (sharing disabled):', saveErr);
+        // Non-fatal: user still sees results, just can't share
+      }
+
       setTimeout(() => setView('results'), 1000); // Small delay to appreciate loading screen
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
@@ -44,14 +146,18 @@ const App: React.FC = () => {
     setAnalysis(null);
     setError(null);
     setSummonerName('');
+    setReportId(null);
+    window.history.pushState({}, '', '/');
   };
 
   const renderContent = () => {
     switch (view) {
       case 'loading':
         return <LoadingScreen summonerName={summonerName} onTimeout={handleTimeout} />;
+      case 'loading-report':
+        return <LoadingScreen summonerName="Loading report..." onTimeout={handleTimeout} />;
       case 'results':
-        return analysis ? <ResultsPage analysis={analysis} onReset={handleReset} /> : <LoadingScreen summonerName={summonerName} onTimeout={handleTimeout} />;
+        return analysis ? <ResultsPage analysis={analysis} onReset={handleReset} reportId={reportId} /> : <LoadingScreen summonerName={summonerName} onTimeout={handleTimeout} />;
       case 'landing':
       default:
         return <LandingPage onAnalyze={handleAnalysis} error={error} />;

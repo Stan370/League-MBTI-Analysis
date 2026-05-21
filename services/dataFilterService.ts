@@ -71,13 +71,10 @@ export function batchFilterMatches(
 
   for (let i = 0; i < limit; i++) {
     const match = matches[i];
-    // 验证 gameType 和 queueId
-    if (!match.info || match.info.gameType !== "MATCHED_GAME") {
-      continue;
-    }
-    if (!match.info.queueId || !ALLOWED_QUEUE_IDS.includes(match.info.queueId)) {
-      continue;
-    }
+    if (!match.info) continue;
+    const gameMode = match.info.gameMode || '';
+    if (['TFT', 'TUTORIAL'].includes(gameMode)) continue;
+    if (!match.info.queueId || !ALLOWED_QUEUE_IDS.includes(match.info.queueId)) continue;
     const data = extractPlayerData(match, puuid);
     if (data) {
       filtered.push(data);
@@ -104,13 +101,10 @@ export async function streamProcessMatches(
     const matches = await Promise.all(batch.map(id => fetchMatch(id)));
 
     for (const match of matches) {
-      // 验证 gameType 和 queueId
-      if (!match.info || match.info.gameType !== "MATCHED_GAME") {
-        continue;
-      }
-      if (!match.info.queueId || !ALLOWED_QUEUE_IDS.includes(match.info.queueId)) {
-        continue;
-      }
+      if (!match.info) continue;
+      const gameMode = match.info.gameMode || '';
+      if (['TFT', 'TUTORIAL'].includes(gameMode)) continue;
+      if (!match.info.queueId || !ALLOWED_QUEUE_IDS.includes(match.info.queueId)) continue;
       const data = extractPlayerData(match, puuid);
       if (data) {
         results.push(data);

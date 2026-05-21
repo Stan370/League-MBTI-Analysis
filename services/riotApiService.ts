@@ -253,10 +253,14 @@ function shouldProcessMatch(
         return { shouldProcess: false, reason: 'missing_info' };
     }
 
-    // 只处理 MATCHED_GAME 类型
-    if (match.info.gameType !== "MATCHED_GAME") {
-        return { shouldProcess: false, reason: 'not_matched_game', queueId: match.info.queueId };
+    // Skip custom games (queueId 0) and TFT — gameMode is the cleanest signal
+    // We intentionally do NOT gate on gameType === "MATCHED_GAME" because Arena
+    // and several rotating modes use different gameType values but are valid PvP.
+    const gameMode = match.info.gameMode || '';
+    if (['TFT', 'TUTORIAL'].includes(gameMode)) {
+        return { shouldProcess: false, reason: 'not_lol_game', queueId: match.info.queueId };
     }
+
     const queueId = match.info.queueId;
     if (queueId === undefined || queueId === null) {
         return { shouldProcess: false, reason: 'missing_queueId' };
@@ -581,9 +585,11 @@ function generateAnalysis(
     const matchData: MatchData[] = [];
     
     for (const match of matches) {
-        if (!match.info || match.info.gameType !== "MATCHED_GAME") continue;
+        if (!match.info) continue;
+        const gameMode = match.info.gameMode || '';
+        if (['TFT', 'TUTORIAL'].includes(gameMode)) continue;
         if (!match.info.queueId || !ALLOWED_QUEUE_IDS.includes(match.info.queueId)) continue;
-        
+
         const player = match.info.participants.find(p => p.puuid === puuid);
         if (!player) continue;
         

@@ -12,9 +12,11 @@ export default {
     extend: {
       fontFamily: {
         teko: ['Teko', 'sans-serif'],
+        rajdhani: ['Rajdhani', 'sans-serif'],
+        space: ['Space Grotesk', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
       },
     },
   },
   plugins: [],
 }
-

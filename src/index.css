@@ -3,6 +3,42 @@
 @tailwind utilities;
 
 body {
-  font-family: 'Teko', sans-serif;
+  font-family: 'Space Grotesk', sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 
+@layer utilities {
+  .text-gold-gradient {
+    background: linear-gradient(92deg, #8f6b24 0%, #f7d879 44%, #b98d2d 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-glow-cyan {
+    text-shadow: 0 0 16px rgba(34, 211, 238, 0.38);
+  }
+
+  .text-glow-gold {
+    text-shadow: 0 0 18px rgba(247, 216, 121, 0.34);
+  }
+
+  .panel-ambient {
+    position: relative;
+    overflow: hidden;
+    background:
+      linear-gradient(100deg, rgba(45, 137, 155, 0.18), transparent 34%),
+      linear-gradient(180deg, rgba(247, 216, 121, 0.06), transparent 42%),
+      linear-gradient(135deg, rgba(10, 20, 40, 0.78), rgba(1, 10, 19, 0.66));
+    border: 1px solid rgba(45, 137, 155, 0.26);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(247, 216, 121, 0.08);
+  }
+
+  .panel-ambient::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(115deg, rgba(247, 216, 121, 0.08), transparent 28%, rgba(34, 211, 238, 0.08) 72%, transparent);
+  }
+}

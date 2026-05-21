@@ -43,8 +43,8 @@ const GrowthChart: React.FC<GrowthChartProps> = ({ data }) => {
           contentStyle={{
             backgroundColor: 'rgba(1, 10, 19, 0.9)',
             borderColor: '#CDA434',
-            fontSize: '18px',
-            fontFamily: 'Teko, sans-serif'
+            fontSize: '14px',
+            fontFamily: 'JetBrains Mono, monospace'
           }}
           labelStyle={{ color: '#ffffff' }}
         />
