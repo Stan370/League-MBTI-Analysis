@@ -82,5 +82,5 @@ This project is licensed under the MIT License.
 
 ---
 <div align="center">
-  Built with ❤️ for League of Legends players worldwide.
+  Built for League of Legends players worldwide.
 </div>
