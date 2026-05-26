@@ -12,6 +12,7 @@ import {
   saveReport,
   loadReport,
   getEmbeddedReport,
+  cacheReport,
 } from './services/reportService';
 
 type View = 'landing' | 'loading' | 'results' | 'loading-report';
@@ -22,6 +23,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [summonerName, setSummonerName] = useState<string>('');
   const [reportId, setReportId] = useState<string | null>(null);
+  const [isMock, setIsMock] = useState<boolean>(false);
 
   // Progressive loading state
   const [analysisHandle, setAnalysisHandle] = useState<AnalysisHandle | null>(null);
@@ -33,6 +35,7 @@ const App: React.FC = () => {
     // Priority 1: SSR-embedded report JSON (injected by functions/report/[id].ts)
     const embedded = getEmbeddedReport();
     if (embedded) {
+      cacheReport(embedded); // seed cache for back/forward
       const result = fromSerializableReport(embedded);
       setAnalysis(result);
       setSummonerName(embedded.summonerName);
@@ -113,6 +116,7 @@ const App: React.FC = () => {
     }
     drainAbortRef.current = false; // allow a fresh drain
     setSummonerName(useMock ? 'Prototype#NA1' : summoner);
+    setIsMock(useMock);
     setView('loading');
     setError(null);
     try {
@@ -151,7 +155,7 @@ const App: React.FC = () => {
         const serializable = toSerializableReport(result, '');
         const { id } = await saveReport(serializable);
         setReportId(id);
-        window.history.pushState({}, '', `/report/${id}`);
+        window.history.pushState({ reportId: id }, '', `/report/${id}`);
       } catch (saveErr) {
         console.warn('[App] Failed to save report to KV (sharing disabled):', saveErr);
       }
@@ -186,7 +190,7 @@ const App: React.FC = () => {
     setError(null);
     setSummonerName('');
     setReportId(null);
-    window.history.pushState({}, '', '/');
+    window.history.pushState({ home: true }, '', '/');
   };
 
   const renderContent = () => {
@@ -204,6 +208,7 @@ const App: React.FC = () => {
             hasMore={analysisHandle?.hasMore ?? false}
             loadedMatchCount={analysisHandle?.loadedMatchCount ?? analysis.matchData.length}
             onLoadMore={handleLoadMore}
+            isMockData={isMock}
           />
         ) : <LoadingScreen summonerName={summonerName} onTimeout={handleTimeout} />;
       case 'landing':

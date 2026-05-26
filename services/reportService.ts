@@ -86,8 +86,16 @@ export function fromSerializableReport(report: SerializableReport): AnalysisResu
 }
 
 // ---------------------------------------------------------------------------
-// API helpers
+// API helpers + in-memory cache
 // ---------------------------------------------------------------------------
+
+/** Module-level cache: avoids re-fetching reports on browser back/forward */
+const reportCache = new Map<string, SerializableReport>();
+
+/** Manually seed the cache (e.g. after analysis completes) */
+export function cacheReport(report: SerializableReport): void {
+  if (report.id) reportCache.set(report.id, report);
+}
 
 export async function saveReport(
   report: SerializableReport,
@@ -100,16 +108,29 @@ export async function saveReport(
   if (!resp.ok) {
     throw new Error(`Failed to save report: ${resp.status}`);
   }
-  return resp.json();
+  const { id } = await resp.json() as { id: string };
+  // Populate cache so future navigations are instant
+  report.id = id;
+  reportCache.set(id, report);
+  return { id };
 }
 
 export async function loadReport(
   id: string,
 ): Promise<SerializableReport | null> {
+  // 1. Check in-memory cache first
+  const cached = reportCache.get(id);
+  if (cached) return cached;
+
+  // 2. Fetch from KV
   const resp = await fetch(`/api/reports/${encodeURIComponent(id)}`);
   if (resp.status === 404) return null;
   if (!resp.ok) throw new Error(`Failed to load report: ${resp.status}`);
-  return resp.json();
+  const report = await resp.json() as SerializableReport;
+
+  // 3. Cache for future navigations
+  reportCache.set(id, report);
+  return report;
 }
 
 // ---------------------------------------------------------------------------

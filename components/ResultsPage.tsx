@@ -77,6 +77,7 @@ interface ResultsPageProps {
   hasMore?: boolean;
   loadedMatchCount?: number;
   onLoadMore?: () => Promise<void>;
+  isMockData?: boolean;
 }
 
 const Section: React.FC<{ title: string; children: React.ReactNode; className?: string; open?: boolean }> = ({ title, children, className = '', open = false }) => (
@@ -89,7 +90,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode; className?: 
 const cardBase = 'panel-ambient p-6 backdrop-blur-md';
 const statValue = 'font-mono font-semibold tracking-normal text-glow-cyan';
 
-const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, hasMore = false, loadedMatchCount, onLoadMore }) => {
+const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, hasMore = false, loadedMatchCount, onLoadMore, isMockData = false }) => {
   const [shareCopied, setShareCopied] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -147,12 +148,17 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
   // ---------------------------------------------------------------------------
   const shareCardRef = useRef<HTMLDivElement>(null);
   const [downloadingCard, setDownloadingCard] = useState<'mbti' | 'year' | null>(null);
+  const [previewImage, setPreviewImage] = useState<{ dataUrl: string; filename: string } | null>(null);
 
-  const _doDownloadMBTI = useCallback(async () => {
+  const _doPreviewMBTI = useCallback(async () => {
     setDownloadingCard('mbti');
     try {
       const { renderMBTICard } = await import('../services/shareCardRenderer');
-      await renderMBTICard(analysis);
+      const dataUrl = await renderMBTICard(analysis);
+      setPreviewImage({
+        dataUrl,
+        filename: `${analysis.summonerName}-${analysis.archetype.mbti}-league-mbti.png`,
+      });
     } catch (err) {
       console.warn('[ShareCard] Failed to generate MBTI card:', err);
       alert('Failed to generate image. Please try again.');
@@ -161,11 +167,15 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
     }
   }, [analysis]);
 
-  const _doDownloadYear = useCallback(async () => {
+  const _doPreviewYear = useCallback(async () => {
     setDownloadingCard('year');
     try {
       const { renderYearCard } = await import('../services/shareCardRenderer');
-      await renderYearCard(analysis);
+      const dataUrl = await renderYearCard(analysis);
+      setPreviewImage({
+        dataUrl,
+        filename: `${analysis.summonerName}-2026-year-stats.png`,
+      });
     } catch (err) {
       console.warn('[ShareCard] Failed to generate Year card:', err);
       alert('Failed to generate image. Please try again.');
@@ -174,9 +184,15 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
     }
   }, [analysis]);
 
-  // Exposed handlers: show paywall first, then run actual download
-  const handleDownloadMBTI = useCallback(() => openPaywall(_doDownloadMBTI), [_doDownloadMBTI]);
-  const handleDownloadYear = useCallback(() => openPaywall(_doDownloadYear), [_doDownloadYear]);
+  const handleDownloadPreview = useCallback(async () => {
+    if (!previewImage) return;
+    const { downloadFromDataUrl } = await import('../services/shareCardRenderer');
+    downloadFromDataUrl(previewImage.dataUrl, previewImage.filename);
+  }, [previewImage]);
+
+  // Exposed handlers: show paywall first, then preview
+  const handlePreviewMBTI = useCallback(() => openPaywall(_doPreviewMBTI), [_doPreviewMBTI]);
+  const handlePreviewYear = useCallback(() => openPaywall(_doPreviewYear), [_doPreviewYear]);
 
   // ---------------------------------------------------------------------------
   // Lazy load more matches (IntersectionObserver)
@@ -461,6 +477,14 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
       <header className="relative mx-auto mb-14 max-w-7xl text-center">
         <div className="absolute inset-x-10 top-1/2 -z-10 h-px bg-cyan-300/30 shadow-[0_0_44px_18px_rgba(34,211,238,0.13)]" />
         <h1 className="font-teko text-7xl md:text-9xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-gray-100 via-[#F7D879] to-gray-400 drop-shadow-[0_0_32px_rgba(45,137,155,0.28)]">{analysis.summonerName}</h1>
+        {isMockData && (
+          <div className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-sm bg-red-900/40 border border-red-500/60 text-red-400 text-sm font-rajdhani uppercase tracking-[0.14em] font-bold shadow-[0_0_18px_rgba(239,68,68,0.18)] animate-pulse">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            Demo Data — Results are not based on a real account
+          </div>
+        )}
       </header>
 
       <Section title={`${analysis.archetype.title} — ${analysis.archetype.mbti}`} className="relative overflow-visible">
@@ -896,18 +920,18 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
             {shareCopied ? '✓ Link Copied!' : '🔗 Share Link'}
           </button>
           <button
-            onClick={handleDownloadMBTI}
+            onClick={handlePreviewMBTI}
             disabled={downloadingCard !== null}
             className="font-rajdhani text-lg font-bold uppercase tracking-[0.12em] text-[#F7D879] bg-transparent px-4 py-3 border border-[#F7D879] hover:bg-[#F7D879]/10 transition-all duration-300 disabled:opacity-50 disabled:cursor-wait"
           >
-            {downloadingCard === 'mbti' ? '⏳ Generating...' : '📸 MBTI Card'}
+            {downloadingCard === 'mbti' ? '⏳ Generating...' : 'MBTI Card'}
           </button>
           <button
-            onClick={handleDownloadYear}
+            onClick={handlePreviewYear}
             disabled={downloadingCard !== null}
             className="font-rajdhani text-lg font-bold uppercase tracking-[0.12em] text-cyan-300 bg-transparent px-4 py-3 border border-[#2D899B] hover:bg-[#2D899B]/10 transition-all duration-300 disabled:opacity-50 disabled:cursor-wait"
           >
-            {downloadingCard === 'year' ? '⏳ Generating...' : '📈 Year Stats Card'}
+            {downloadingCard === 'year' ? '⏳ Generating...' : 'Year Stats'}
           </button>
         </div>
 
@@ -947,18 +971,18 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
 
                 {/* primary CTA */}
                 <a
-                  href="https://buymeacoffee.com"
+                  href="https://github.com/sponsors/Stan370"
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={proceedDownload}
                   className="block w-full font-rajdhani text-lg font-bold uppercase tracking-[0.15em] text-[#010A13] bg-gradient-to-r from-[#8f6b24] via-[#F7D879] to-[#b98d2d] py-4 shadow-[0_0_30px_rgba(247,216,121,0.25)] hover:shadow-[0_0_50px_rgba(247,216,121,0.4)] transition-all duration-300 mb-4"
                 >
-                  ☕ Support &amp; Download
+                  Github Support
                 </a>
 
                 {/* skip link */}
                 <button
-                  onClick={proceedDownload}
+                  onClick={handleDownloadPreview}
                   className="text-sm text-gray-600 hover:text-gray-400 transition-colors duration-200 underline underline-offset-2"
                 >
                   No thanks, just download
@@ -967,6 +991,50 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
 
               {/* subtle bottom rule */}
               <div className="h-px w-full bg-gradient-to-r from-transparent via-[#2D899B]/40 to-transparent" />
+            </div>
+          </div>
+        )}
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Preview modal — shows rendered card with download option            */}
+        {/* ------------------------------------------------------------------ */}
+        {previewImage && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+            style={{ background: 'rgba(1,10,19,0.92)', backdropFilter: 'blur(14px)' }}
+            onClick={(e) => { if (e.target === e.currentTarget) setPreviewImage(null); }}
+          >
+            <div className="relative flex flex-col items-center gap-5 max-h-[90vh]">
+              {/* Close button */}
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="absolute -top-3 -right-3 z-10 w-9 h-9 flex items-center justify-center bg-[#010A13] border border-gray-600 text-gray-400 hover:text-white hover:border-[#F7D879] transition-colors duration-200 text-lg font-bold"
+              >
+                ✕
+              </button>
+
+              {/* Preview image */}
+              <img
+                src={previewImage.dataUrl}
+                alt="Share Card Preview"
+                className="max-h-[72vh] w-auto border border-[#2D899B]/40 shadow-[0_0_80px_rgba(45,137,155,0.2)]"
+              />
+
+              {/* Action buttons */}
+              <div className="flex gap-4">
+                <button
+                  onClick={handleDownloadPreview}
+                  className="font-rajdhani text-lg font-bold uppercase tracking-[0.15em] text-[#010A13] bg-gradient-to-r from-[#8f6b24] via-[#F7D879] to-[#b98d2d] px-8 py-3 border border-[#F7D879] shadow-[0_0_30px_rgba(247,216,121,0.2)] hover:shadow-[0_0_50px_rgba(247,216,121,0.4)] transition-all duration-300"
+                >
+                  Download
+                </button>
+                <button
+                  onClick={() => setPreviewImage(null)}
+                  className="font-rajdhani text-lg font-bold uppercase tracking-[0.15em] text-gray-400 bg-transparent px-6 py-3 border border-gray-600 hover:text-white hover:border-gray-400 transition-all duration-300"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         )}

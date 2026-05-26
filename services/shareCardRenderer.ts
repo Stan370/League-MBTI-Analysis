@@ -76,10 +76,13 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-function downloadCanvas(canvas: HTMLCanvasElement, filename: string) {
-  const url = canvas.toDataURL('image/png');
+function canvasToDataUrl(canvas: HTMLCanvasElement): string {
+  return canvas.toDataURL('image/png');
+}
+
+export function downloadFromDataUrl(dataUrl: string, filename: string) {
   const a = document.createElement('a');
-  a.href = url;
+  a.href = dataUrl;
   a.download = filename;
   a.click();
 }
@@ -88,7 +91,7 @@ function downloadCanvas(canvas: HTMLCanvasElement, filename: string) {
 // Card 1: MBTI Personality Card (Instagram Story 1080×1920)
 // ---------------------------------------------------------------------------
 
-export async function renderMBTICard(analysis: AnalysisResult): Promise<void> {
+export async function renderMBTICard(analysis: AnalysisResult): Promise<string> {
   const canvas = document.createElement('canvas');
   canvas.width = CARD_W;
   canvas.height = CARD_H;
@@ -288,14 +291,14 @@ export async function renderMBTICard(analysis: AnalysisResult): Promise<void> {
     font: '24px sans-serif', color: GRAY_600,
   });
 
-  downloadCanvas(canvas, `${analysis.summonerName}-${analysis.archetype.mbti}-league-mbti.png`);
+  return canvasToDataUrl(canvas);
 }
 
 // ---------------------------------------------------------------------------
 // Card 2: Year Stats Card (yearin.lol style, 1080×1920)
 // ---------------------------------------------------------------------------
 
-export async function renderYearCard(analysis: AnalysisResult): Promise<void> {
+export async function renderYearCard(analysis: AnalysisResult): Promise<string> {
   const canvas = document.createElement('canvas');
   canvas.width = CARD_W;
   canvas.height = CARD_H;
@@ -528,5 +531,5 @@ export async function renderYearCard(analysis: AnalysisResult): Promise<void> {
     font: '24px sans-serif', color: GRAY_600,
   });
 
-  downloadCanvas(canvas, `${analysis.summonerName}-2026-year-stats.png`);
+  return canvasToDataUrl(canvas);
 }
