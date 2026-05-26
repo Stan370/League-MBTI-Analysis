@@ -99,6 +99,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
   // ---------------------------------------------------------------------------
   const [paywallVisible, setPaywallVisible] = useState(false);
   const pendingDownloadRef = useRef<(() => Promise<void>) | null>(null);
+  const yearRenderPromiseRef = useRef<Promise<string> | null>(null);
 
   const openPaywall = (actualDownload: () => Promise<void>) => {
     pendingDownloadRef.current = actualDownload;
@@ -167,23 +168,6 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
     }
   }, [analysis]);
 
-  const _doPreviewYear = useCallback(async () => {
-    setDownloadingCard('year');
-    try {
-      const { renderYearCard } = await import('../services/shareCardRenderer');
-      const dataUrl = await renderYearCard(analysis);
-      setPreviewImage({
-        dataUrl,
-        filename: `${analysis.summonerName}-2026-year-stats.png`,
-      });
-    } catch (err) {
-      console.warn('[ShareCard] Failed to generate Year card:', err);
-      alert('Failed to generate image. Please try again.');
-    } finally {
-      setDownloadingCard(null);
-    }
-  }, [analysis]);
-
   const handleDownloadPreview = useCallback(async () => {
     if (!previewImage) return;
     const { downloadFromDataUrl } = await import('../services/shareCardRenderer');
@@ -192,7 +176,30 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
 
   // Exposed handlers: show paywall first, then preview
   const handlePreviewMBTI = useCallback(() => openPaywall(_doPreviewMBTI), [_doPreviewMBTI]);
-  const handlePreviewYear = useCallback(() => openPaywall(_doPreviewYear), [_doPreviewYear]);
+  const handlePreviewYear = useCallback(() => {
+    // Start rendering eagerly so the card is ready when the paywall is dismissed
+    setDownloadingCard('year');
+    yearRenderPromiseRef.current = import('../services/shareCardRenderer')
+      .then(({ renderYearCard }) => renderYearCard(analysis));
+
+    // Wire proceedDownload to await the in-flight render
+    pendingDownloadRef.current = async () => {
+      try {
+        const dataUrl = await yearRenderPromiseRef.current!;
+        setPreviewImage({
+          dataUrl,
+          filename: `${analysis.summonerName}-2026-year-stats.png`,
+        });
+      } catch (err) {
+        console.warn('[ShareCard] Failed to generate Year card:', err);
+        alert('Failed to generate image. Please try again.');
+      } finally {
+        setDownloadingCard(null);
+        yearRenderPromiseRef.current = null;
+      }
+    };
+    setPaywallVisible(true);
+  }, [analysis]);
 
   // ---------------------------------------------------------------------------
   // Lazy load more matches (IntersectionObserver)
@@ -982,7 +989,7 @@ const ResultsPage: React.FC<ResultsPageProps> = ({ analysis, onReset, reportId, 
 
                 {/* skip link */}
                 <button
-                  onClick={handleDownloadPreview}
+                  onClick={proceedDownload}
                   className="text-sm text-gray-600 hover:text-gray-400 transition-colors duration-200 underline underline-offset-2"
                 >
                   No thanks, just download
